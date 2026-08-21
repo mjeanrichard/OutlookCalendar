@@ -11,16 +11,17 @@ Repo root is `Calendar/` (this file's directory). The plugins live under `Outloo
 
 | Path | Kind | What it is |
 | --- | --- | --- |
-| `OutlookWidget/outlook_core/` | `data` | Microsoft Graph sign-in, tokens, calendar list, caching |
+| `OutlookWidget/outlook_core/` | `data` | Microsoft Graph sign-in, tokens, calendar list, caching, the family config |
 | `OutlookWidget/outlook_week/` | `widget` | Next N days, grouped by day |
+| `OutlookWidget/outlook_family/` | `widget` | The family timetable: a column per day, colour/pattern per person |
 
 **The folder name is the plugin id** — there is no `id` field in `plugin.json`. Everything else
 under `OutlookWidget/` is scaffolding: `devserver.py`, `conftest.py`, `_devsupport.py`, `_tests/`,
 `_docs/` (a copy of the Tesserae docs; `_docs/widgets.md` is the authoritative widget contract),
 and `ruff.toml`, which mirrors the clone's lint/format settings.
 
-Status: structure and data layer complete and tested. `outlook_week/client.js` is a placeholder
-list — the real per-size layout is the next step.
+Status: `outlook_core` and `outlook_family` are complete and tested. `outlook_week/client.js` is
+still a placeholder list — its real per-size layout is a separate task.
 
 ## Working agreements
 
@@ -69,9 +70,22 @@ junction or copy is involved. If upstream changes `discover()`'s signature,
 - Plugins cannot import each other. `outlook_week` reaches the core through
   `current_app.config["PLUGIN_REGISTRY"].get("outlook_core").server_module`, the same way
   `calendar_day` reaches `calendar_core` in the clone.
+- **A plugin's own modules can't import each other either.** The host loads `server.py` by file
+  path as `_tesserae_plugins.<id>.server` and never creates the parent packages, so `from . import
+  family` has nothing to resolve against and the plugin folder isn't on `sys.path`. `server.py`'s
+  `_sibling()` loads `family.py` explicitly; that is the only supported route to a second module.
 - **`load_events_detailed(calendar_ids, start, end, *, cfg, data_dir)` is the contract** between the
   two plugins. Keep its event shape stable — later views (`outlook_next`, `outlook_day`) reuse it.
   Cancelled and declined events are filtered there, once, so every widget agrees.
+- **`resolve_events(events)` is the second half of that contract.** It annotates each event with
+  `members` / `routine` / `title` from the family rules in `outlook_core/family.py`, so no widget
+  needs to know how ownership is configured. Rules are *all applied*, not first-match-wins: an
+  event can belong to two people. The letter-prefix matcher (`L: Klavier`, `PM: Elternabend`) only
+  fires when **every** captured letter maps to a member — that guard is what stops `OK Meeting`
+  losing its first word, and it has a test.
+- The family lives in `data/plugins/outlook_core/family.json`, not in `settings`: the manifest
+  schema can't express a nested list of members and rules. Members take accent slots **2-6**;
+  slot 1 is the design system's alerts/"now" role and `clean_config` refuses it.
 - Auth is the OAuth device-code flow. Only the refresh token persists
   (`data/plugins/outlook_core/token.json`); refresh tokens rotate, so always store what comes back.
 - `GET /me/calendars/{id}/calendarView` expands recurrences server-side — no RRULE handling here.

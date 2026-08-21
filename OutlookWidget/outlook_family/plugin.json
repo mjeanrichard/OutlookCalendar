@@ -1,0 +1,156 @@
+{
+  "tesserae_compat": "1.x",
+  "name": "Outlook, Family Week",
+  "version": "0.1.0",
+  "kind": "widget",
+  "description": "The next few days as a family timetable: one column per day, every appointment tinted, patterned and initialled with whoever it belongs to. Who owns what is configured once on the Outlook Core page, from Outlook categories, title prefixes like 'L: Klavier', a word in the title, or the calendar an event came from. Recurring commitments such as school and office hours move to a narrow gutter so appointment titles keep the width.",
+  "icon": "ph-users-three",
+  "supports": { "sizes": ["md", "lg"] },
+  "cell_options": [
+    {
+      "name": "calendars",
+      "type": "multiselect",
+      "label": "Calendars",
+      "choices_from": "calendars",
+      "help": "Leave empty for your default Outlook calendar."
+    },
+    {
+      "name": "members",
+      "type": "multiselect",
+      "label": "Show these people",
+      "choices_from": "family_members",
+      "help": "Leave empty for everyone. Set up the family on the Outlook Core plugin page."
+    },
+    {
+      "name": "layout",
+      "type": "select",
+      "label": "Layout",
+      "default": "grid",
+      "choices": [{ "value": "grid", "label": "Timetable (a column per day)" }]
+    },
+    {
+      "name": "days",
+      "type": "slider",
+      "label": "Days to show",
+      "default": 7,
+      "min": 3,
+      "max": 7,
+      "step": 1,
+      "unit": "d",
+      "help": "Always starts today. Fewer days means wider columns, which is the quickest way to get more of each title on screen."
+    },
+    {
+      "name": "hour_start",
+      "type": "slider",
+      "label": "Day starts at",
+      "default": 7,
+      "min": 0,
+      "max": 23,
+      "step": 1,
+      "unit": "h",
+      "help": "The window is fixed so the grid keeps its shape between refreshes. Anything earlier is counted at the top edge of its day instead."
+    },
+    {
+      "name": "hour_end",
+      "type": "slider",
+      "label": "Day ends at",
+      "default": 21,
+      "min": 1,
+      "max": 24,
+      "step": 1,
+      "unit": "h",
+      "help": "Anything later is counted at the bottom edge of its day."
+    },
+    {
+      "name": "routine_gutter",
+      "type": "boolean",
+      "label": "Routine in a side gutter",
+      "default": true,
+      "help": "Draws events a rule marked as routine — school, office hours — as thin labelled bars down the left of each day, leaving the rest of the column for appointments. Turn off to draw them as ordinary blocks."
+    },
+    {
+      "name": "show_location",
+      "type": "boolean",
+      "label": "Show locations",
+      "default": false,
+      "help": "Adds the location under the title where a block is tall enough. Off by default: the title is usually the better use of the space."
+    }
+  ],
+  "updates": {
+    "on_schedule": [{ "kind": "daily", "suggested_at": "06:00" }]
+  },
+  "render": { "dither": "none", "needs_network": true },
+  "requires": [
+    "network:login.microsoftonline.com",
+    "network:graph.microsoft.com",
+    "settings:plugin/outlook_core"
+  ],
+  "data_schema": {
+    "color": "#0F6CBD",
+    "fields": [
+      { "name": "count", "type": "num", "label": "Event count" },
+      { "name": "days", "type": "arr", "label": "Days" },
+      { "name": "members", "type": "arr", "label": "Family members" },
+      { "name": "stale", "type": "str", "label": "Serving cached data" }
+    ],
+    "sample": {
+      "count": 3,
+      "stale": false,
+      "layout": "grid",
+      "hours": { "start": 7, "end": 21 },
+      "members": [
+        { "id": "papa", "name": "Papa", "letter": "P", "accent": 5, "pattern": "solid", "everyone": false },
+        { "id": "lea", "name": "Lea", "letter": "L", "accent": 3, "pattern": "dots", "everyone": false },
+        { "id": "familie", "name": "Familie", "letter": "F", "accent": 4, "pattern": "cross", "everyone": true }
+      ],
+      "days": [
+        {
+          "date": "2026-08-21",
+          "weekday": "Friday",
+          "is_today": true,
+          "events": [
+            {
+              "summary": "Büro",
+              "title": "Büro",
+              "start": "2026-08-21T08:00:00+02:00",
+              "end": "2026-08-21T17:00:00+02:00",
+              "all_day": false,
+              "location": "",
+              "show_as": "busy",
+              "response": "accepted",
+              "categories": ["Arbeit"],
+              "members": ["papa"],
+              "routine": true
+            },
+            {
+              "summary": "L: Klavier",
+              "title": "Klavier",
+              "start": "2026-08-21T16:00:00+02:00",
+              "end": "2026-08-21T17:00:00+02:00",
+              "all_day": false,
+              "location": "Musikschule",
+              "show_as": "busy",
+              "response": "accepted",
+              "categories": [],
+              "members": ["lea"],
+              "routine": false
+            },
+            {
+              "summary": "Brunch Grosseltern",
+              "title": "Brunch Grosseltern",
+              "start": "2026-08-21T11:00:00+02:00",
+              "end": "2026-08-21T14:00:00+02:00",
+              "all_day": false,
+              "location": "",
+              "show_as": "busy",
+              "response": "accepted",
+              "categories": [],
+              "members": ["familie"],
+              "routine": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -79,6 +79,12 @@ def week(app: Flask) -> Any:
 
 
 @pytest.fixture
+def fam(app: Flask) -> Any:
+    """The loaded ``outlook_family`` server module."""
+    return _plugin(app, "outlook_family").server_module
+
+
+@pytest.fixture
 def cfg(core: Any) -> Any:
     return core.AppConfig(client_id="test-client-id", tenant="common")
 

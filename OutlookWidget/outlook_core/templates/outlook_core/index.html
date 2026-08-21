@@ -102,6 +102,234 @@
                  blurb='Sign in above. Once signed in, each Outlook widget picks which of these calendars it shows.') }}
   {% endif %}
 </section>
+
+{#- The family belongs to the install, not to a dashboard cell, so it is
+    configured once here and read by every outlook_* widget.
+
+    Both forms stay plain parallel-list POSTs with no JavaScript: every row
+    submits its fields in DOM order, checkboxes submit their row index, and the
+    blank row at the bottom is what "add" means. The styling is what does the
+    work — fields are borderless until you touch them, so the page reads as a
+    list of people and a list of sentences rather than a wall of controls. -#}
+<section class="card">
+  {{ card_head('Family members', icon_name='users-three', level=2) }}
+  <p class="field-help" style="margin-top:0">The letter does double duty: it is drawn on events
+    two people share, and it is what a title prefix like <code>L: Klavier</code> is matched
+    against, so everyone needs their own. The pattern is what keeps people apart on a
+    black-and-white panel, where every accent colour collapses to the same black.</p>
+
+  <form method="post" action="{{ url_for('outlook_core_admin.save_members') }}" class="form">
+    <input type="hidden" name="preview_calendar" value="{{ preview_calendar or '' }}">
+    <div class="ow-mem ow-mem-head">
+      <span>Name</span><span>Letter</span><span>Colour</span><span>Pattern</span>
+      <span class="ow-mid">Everyone</span><span class="ow-mid">Remove</span>
+    </div>
+
+    {% for member in family.members + [none] %}
+    {% set idx = loop.index0 %}
+    <div class="ow-mem {% if not member %}is-new{% endif %}">
+      <span class="ow-cell">
+        <input type="hidden" name="member_id" value="{{ member.id if member else '' }}">
+        <input type="text" name="member_name" class="ow-inp ow-strong"
+               value="{{ member.name if member else '' }}"
+               placeholder="{{ 'Add someone…' if not member else '' }}" autocomplete="off">
+      </span>
+
+      <input type="text" name="member_letter" maxlength="1" class="ow-inp ow-letter"
+             value="{{ member.letter if member else '' }}" autocomplete="off">
+
+      <span class="ow-cell ow-swatched">
+        <span class="ow-dot" style="background:{{ accent_hex[member.accent] if member else 'transparent' }}"></span>
+        <select name="member_accent" class="ow-inp ow-sel">
+          {% for slot in accents %}
+          <option value="{{ slot }}" {% if member and member.accent == slot %}selected{% endif %}>
+            {{ slot }} &middot; {{ accent_names[slot] }}
+          </option>
+          {% endfor %}
+        </select>
+      </span>
+
+      <select name="member_pattern" class="ow-inp ow-sel">
+        {% for pattern in patterns %}
+        <option value="{{ pattern }}" {% if member and member.pattern == pattern %}selected{% endif %}>
+          {{ pattern }}
+        </option>
+        {% endfor %}
+      </select>
+
+      <label class="ow-box" title="The household member — shared events are drawn as a band, not as one person's block.">
+        <input type="checkbox" name="member_everyone" value="{{ idx }}"
+               {% if member and member.everyone %}checked{% endif %}>
+        <span class="ow-tick" aria-hidden="true"></span>
+      </label>
+
+      <label class="ow-del {% if not member %}is-off{% endif %}"
+             title="Remove {{ member.name if member else 'this row' }} when you save">
+        <input type="checkbox" name="member_delete" value="{{ idx }}"
+               {% if not member %}disabled{% endif %}>
+        <i class="ph-bold ph-trash" aria-hidden="true"></i>
+      </label>
+    </div>
+    {% endfor %}
+
+    <div class="ow-foot">
+      <span class="ow-hint">The empty row at the bottom is how you add someone.</span>
+      {{ button('Save family', icon='check') }}
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  {{ card_head('Who owns an event', icon_name='funnel', level=2) }}
+  <p class="field-help" style="margin-top:0">Every rule is checked against every event, and
+    <em>all</em> matches apply &mdash; that is how one &ldquo;Elternabend&rdquo; belongs to two
+    people.</p>
+
+  {% if calendars %}
+  {#- Which calendar the counts and the tray below are measured against. A GET
+      form so changing it never touches the saved rules; both save buttons
+      carry it through as a hidden field so the choice survives a redirect. -#}
+  <form method="get" class="ow-preview">
+    <label for="ow-preview-cal">Preview against</label>
+    <select id="ow-preview-cal" name="calendar" class="ow-inp ow-sel">
+      <option value="">All calendars</option>
+      {% for calendar in calendars %}
+      <option value="{{ calendar.id }}" {% if preview_calendar == calendar.id %}selected{% endif %}>
+        {{ calendar.name }}{% if calendar.is_default %} (default){% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    {{ button('Update preview', variant='ghost', icon='arrows-clockwise') }}
+  </form>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('outlook_core_admin.save_rules') }}" class="form">
+    <input type="hidden" name="preview_calendar" value="{{ preview_calendar or '' }}">
+    {% for rule in family.rules + [none] %}
+    {% set idx = loop.index0 %}
+    <div class="ow-rule {% if not rule %}is-new{% endif %}">
+      <input type="hidden" name="rule_id" value="{{ rule.id if rule else '' }}">
+      <input type="number" name="rule_order" class="ow-inp ow-order" value="{{ idx }}"
+             min="0" max="99" title="Rules are checked in this order">
+
+      {#- A new row defaults to "Category is": the prefix rule is first in the
+          list but ignores the value field, which makes it a confusing thing to
+          land on when you are adding a rule. -#}
+      <select name="rule_kind" class="ow-inp ow-sel ow-kind">
+        {% for kind in rule_kinds %}
+        <option value="{{ kind }}"
+                {% if (rule and rule.kind == kind) or (not rule and kind == 'category') %}selected{% endif %}>
+          {{ kind_labels[kind] }}
+        </option>
+        {% endfor %}
+      </select>
+
+      <input type="text" name="rule_value" class="ow-inp ow-value"
+             value="{{ rule.value if rule else '' }}"
+             placeholder="{{ 'not needed' if rule and rule.kind == 'prefix' else 'what to match on…' }}"
+             autocomplete="off">
+
+      <span class="ow-arrow" aria-hidden="true">&rarr;</span>
+
+      {#- Member chips rather than a multi-select: the whole family fits on one
+          line, and which of them a rule points at reads at a glance. -#}
+      <span class="ow-chips">
+        {% if family.members %}
+          {% for member in family.members %}
+          <label class="ow-pick">
+            <input type="checkbox" name="rule_members_{{ idx }}" value="{{ member.id }}"
+                   {% if rule and member.id in rule.members %}checked{% endif %}>
+            <span class="ow-pick-body">
+              <span class="ow-dot" style="background:{{ accent_hex[member.accent] }}"></span>{{ member.name }}
+            </span>
+          </label>
+          {% endfor %}
+        {% else %}
+          <span class="ow-hint">Add a family member first.</span>
+        {% endif %}
+      </span>
+
+      <span class="ow-toggles">
+        <label class="ow-pick ow-pick--flag"
+               title="Remove the matched text from the title the panel draws">
+          <input type="checkbox" name="rule_strip" value="{{ idx }}"
+                 {% if rule and rule.strip %}checked{% endif %}>
+          <span class="ow-pick-body">strip</span>
+        </label>
+        <label class="ow-pick ow-pick--flag"
+               title="Draw the matches in the day's side gutter instead of as full blocks">
+          <input type="checkbox" name="rule_routine" value="{{ idx }}"
+                 {% if rule and rule.routine %}checked{% endif %}>
+          <span class="ow-pick-body">routine</span>
+        </label>
+      </span>
+
+      <span class="ow-tail">
+        <span class="ow-count">
+          {%- if rule and report %}{{ report.counts.get(rule.id, 0) }} this week
+          {%- elif rule %}&mdash;{% endif -%}
+        </span>
+        <label class="ow-del {% if not rule %}is-off{% endif %}" title="Remove this rule when you save">
+          <input type="checkbox" name="rule_delete" value="{{ idx }}"
+                 {% if not rule %}disabled{% endif %}>
+          <i class="ph-bold ph-trash" aria-hidden="true"></i>
+        </label>
+      </span>
+    </div>
+    {% endfor %}
+
+    <div class="ow-foot">
+      <span class="ow-hint">The empty row at the bottom is how you add a rule.</span>
+      {{ button('Save rules', icon='check') }}
+    </div>
+  </form>
+
+  <div class="ow-ba">
+    <div class="ow-ba-side">
+      <span class="ow-ba-label">In Outlook</span>
+      <span class="ow-ba-val">PM: Elternabend 5b</span>
+    </div>
+    <span class="ow-ba-mid" aria-hidden="true">&rarr;</span>
+    <div class="ow-ba-side">
+      <span class="ow-ba-label">On the panel</span>
+      <span class="ow-ba-val">
+        <span class="ow-mark" style="background:{{ accent_hex[5] }}">P</span><span
+              class="ow-mark" style="background:{{ accent_hex[6] }}">M</span>
+        Elternabend 5b
+      </span>
+    </div>
+  </div>
+  <p class="field-help">With <strong>strip</strong> on, the letters move out of the text and into
+    the block&rsquo;s colour and stripe, which buys the title back its width. A prefix rule fires
+    only when <em>every</em> letter it finds is a member&rsquo;s &mdash; that is what stops
+    <code>OK Meeting</code> from losing its first word.</p>
+
+  {% if report %}
+  <div class="ow-tray">
+    <div class="ow-tray-head">
+      <span>Matched nothing this week{% if preview_calendar %} in this calendar{% endif %}</span>
+      <span class="ow-chip-count">{{ report.unmatched | length }} of {{ report.total }}</span>
+    </div>
+    {% if report.unmatched %}
+    {% for event in report.unmatched[:12] %}
+    <div class="ow-tray-item">
+      <span class="ow-tray-name">{{ event.summary }}</span>
+      <span class="ow-tray-src">
+        {{ event.start[:16] | replace('T', ' &middot; ' | safe) }}
+        {%- if event.categories %} &middot; {{ event.categories | join(', ') }}{% endif %}
+        {%- if event.calendar_name %} &middot; {{ event.calendar_name }}{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+    <p class="ow-tray-foot">These still appear on the panel, in grey &mdash; nothing disappears
+      because no rule claimed it. This list is how you notice a rule that has quietly stopped
+      firing.</p>
+    {% else %}
+    <p class="ow-tray-foot">Every event this week belongs to someone.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
 {% endif %}
 
 <style>
@@ -127,5 +355,348 @@
     padding: 2px 8px; border-radius: 999px; border: 1px solid var(--t-border);
   }
   .ow-id { opacity: 0.6; font-size: 0.8rem; }
+
+  /* ---- Family editors -------------------------------------------------
+     The trick that keeps these readable: every field is borderless and
+     transparent until you hover or focus it. At rest the members card reads
+     as a list of people and the rules card as a list of sentences; the
+     controls only appear where you are actually working. */
+
+  /* The admin shell uppercases and tracks text inside form labels, which is
+     right for field captions and wrong for a chip that has to read as a
+     person's name. Reset it once for everything these two cards draw. */
+  .ow-mem, .ow-rule, .ow-tray, .ow-ba, .ow-foot,
+  .ow-mem *, .ow-rule *, .ow-tray *, .ow-ba *, .ow-foot * {
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  .ow-mem-head, .ow-mem-head *,
+  .ow-tray-head > span:first-child,
+  .ow-ba-label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .ow-pick--flag .ow-pick-body { letter-spacing: 0.02em; }
+
+  .ow-inp {
+    font: inherit;
+    color: var(--t-fg);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    padding: 5px 8px;
+    width: 100%;
+    min-width: 0;
+    transition: none;
+  }
+  .ow-inp:hover { border-color: var(--t-border); background: var(--t-surface-soft); }
+  .ow-inp:focus {
+    border-color: var(--t-accent);
+    background: var(--t-surface);
+    outline: 2px solid var(--t-accent-soft);
+    outline-offset: 0;
+  }
+  .ow-strong { font-weight: 600; }
+  .ow-letter {
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  /* Native select arrows on every row is exactly the noise we are avoiding,
+     so the caret is drawn only as part of the field's own padding. */
+  .ow-sel {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 22px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
+  }
+
+  .ow-dot {
+    width: 11px; height: 11px;
+    border-radius: 3px;
+    flex: 0 0 auto;
+    display: inline-block;
+  }
+
+  /* ---- members table ---- */
+  .ow-mem {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 3.4rem 11.5rem 8.5rem 5.5rem 4rem;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--t-border);
+  }
+  .ow-mem-head {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--t-muted);
+    padding-bottom: 7px;
+    border-bottom-color: var(--t-border-strong);
+  }
+  .ow-mem:last-of-type { border-bottom: none; }
+  .ow-mem.is-new { opacity: 0.72; }
+  .ow-mem.is-new:focus-within { opacity: 1; }
+  .ow-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ow-swatched .ow-dot { margin-left: 2px; }
+  .ow-mid { text-align: center; }
+
+  /* ---- checkboxes as a quiet square ---- */
+  .ow-box {
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    padding: 6px 0;
+    /* In the rule row this is the last flex item; without a fixed basis it
+       shrinks and clips against the card's edge. */
+    flex: 0 0 auto;
+    width: 22px;
+  }
+  .ow-box input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .ow-tick {
+    width: 17px; height: 17px;
+    border: 1px solid var(--t-border-strong);
+    border-radius: 5px;
+    background: var(--t-surface);
+    display: block;
+    position: relative;
+  }
+  .ow-box:hover .ow-tick { border-color: var(--t-accent); }
+  .ow-box input:focus-visible + .ow-tick { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+  .ow-box input:checked + .ow-tick { background: var(--t-accent); border-color: var(--t-accent); }
+  .ow-box input:checked + .ow-tick.is-danger { background: var(--t-danger); border-color: var(--t-danger); }
+  .ow-box input:checked + .ow-tick::after {
+    content: "";
+    position: absolute;
+    left: 5px; top: 1px;
+    width: 4px; height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(43deg);
+  }
+  .ow-box.is-off { opacity: 0.25; pointer-events: none; }
+
+  /* ---- delete: a bin that marks the row, not a checkbox ----
+     It is still a checkbox underneath, so the form posts exactly as before
+     and nothing is destroyed until you save. :has() paints the pending row;
+     where it isn't supported the bin still works, the row just doesn't tint. */
+  .ow-del {
+    display: grid;
+    place-items: center;
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--t-muted);
+    flex: 0 0 auto;
+    justify-self: center;
+  }
+  .ow-del input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .ow-del i { font-size: 1rem; line-height: 1; }
+  .ow-del:hover { background: var(--t-danger-bg); color: var(--t-danger); }
+  .ow-del input:focus-visible ~ i { outline: 2px solid var(--t-accent); outline-offset: 3px; }
+  .ow-del:has(input:checked) { background: var(--t-danger); color: #fff; }
+  .ow-del.is-off { opacity: 0.2; pointer-events: none; }
+
+  .ow-mem:has(.ow-del input:checked),
+  .ow-rule:has(.ow-del input:checked) {
+    background: var(--t-danger-bg);
+    box-shadow: inset 3px 0 0 var(--t-danger);
+  }
+  .ow-mem:has(.ow-del input:checked) .ow-inp,
+  .ow-rule:has(.ow-del input:checked) .ow-inp {
+    text-decoration: line-through;
+    color: var(--t-muted);
+  }
+  .ow-mem:has(.ow-del input:checked) .ow-pick,
+  .ow-rule:has(.ow-del input:checked) .ow-pick,
+  .ow-mem:has(.ow-del input:checked) .ow-dot { opacity: 0.4; }
+
+  /* ---- preview scope ---- */
+  .ow-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    background: var(--t-surface-sunk);
+    border-radius: 9px;
+  }
+  .ow-preview label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--t-muted);
+  }
+  .ow-preview select { width: auto; min-width: 12rem; background-color: var(--t-surface); }
+  .ow-preview .actions { margin: 0; }
+
+  /* ---- rules, one sentence per row ---- */
+  .ow-rule {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--t-border);
+  }
+  .ow-rule.is-new { opacity: 0.72; }
+  .ow-rule.is-new:focus-within { opacity: 1; }
+  .ow-order {
+    width: 2.6rem;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem;
+    color: var(--t-muted);
+    flex: 0 0 auto;
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  .ow-order::-webkit-outer-spin-button,
+  .ow-order::-webkit-inner-spin-button { appearance: none; margin: 0; }
+  .ow-kind { width: 11.5rem; flex: 0 0 auto; }
+  .ow-value { flex: 1 1 10rem; min-width: 8rem; }
+  .ow-arrow { color: var(--t-muted); flex: 0 0 auto; }
+  .ow-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 0 1 auto; }
+  .ow-toggles { display: flex; gap: 4px; flex: 0 0 auto; }
+
+  /* Chips: a checkbox that reads as a word. Styled off the input's sibling
+     so no :has() is involved. */
+  .ow-pick { cursor: pointer; display: inline-flex; }
+  .ow-pick input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .ow-pick-body {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid var(--t-border);
+    border-radius: 999px;
+    font-size: 0.84rem;
+    color: var(--t-muted);
+    background: var(--t-surface);
+    white-space: nowrap;
+  }
+  .ow-pick:hover .ow-pick-body { border-color: var(--t-border-strong); color: var(--t-fg-soft); }
+  .ow-pick input:focus-visible + .ow-pick-body { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+  .ow-pick input:checked + .ow-pick-body {
+    color: var(--t-accent-ink);
+    background: var(--t-accent-soft);
+    border-color: var(--t-accent);
+    font-weight: 600;
+  }
+  .ow-pick input:not(:checked) + .ow-pick-body .ow-dot { opacity: 0.35; }
+  .ow-pick--flag .ow-pick-body {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.76rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* The count and the bin travel together and never wrap: if the row runs out
+     of width it is the member chips that give, not the row's own controls. */
+  .ow-tail {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    padding-left: 8px;
+  }
+  .ow-count {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+    color: var(--t-muted);
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  .ow-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .ow-foot .actions { margin: 0; }
+  .ow-hint { font-size: 0.84rem; color: var(--t-muted); }
+
+  /* ---- before / after ---- */
+  .ow-ba {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 16px;
+    align-items: center;
+    margin-top: 22px;
+    padding: 14px 16px;
+    background: var(--t-surface-sunk);
+    border-radius: 10px;
+  }
+  .ow-ba-side { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .ow-ba-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--t-muted);
+  }
+  .ow-ba-val { font-weight: 600; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .ow-ba-mid { color: var(--t-muted); font-size: 1.2rem; }
+  .ow-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 17px; height: 17px;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+  }
+
+  /* ---- unmatched tray ---- */
+  .ow-tray {
+    margin-top: 20px;
+    border: 1px dashed var(--t-border-strong);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .ow-tray-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--t-muted);
+    margin-bottom: 10px;
+  }
+  .ow-chip-count {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0;
+    text-transform: none;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--t-surface-sunk);
+    border: 1px solid var(--t-border);
+  }
+  .ow-tray-item {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 5px 0;
+  }
+  .ow-tray-name { font-weight: 600; }
+  .ow-tray-src { font-size: 0.84rem; color: var(--t-muted); }
+  .ow-tray-foot { font-size: 0.84rem; color: var(--t-muted); margin: 10px 0 0; }
+
+  @media (max-width: 780px) {
+    .ow-mem { grid-template-columns: minmax(0, 1fr) 3.4rem; row-gap: 6px; padding: 10px 0; }
+    .ow-mem-head { display: none; }
+    .ow-mem > *:nth-child(n + 4) { grid-column: span 1; }
+    .ow-count { margin-left: 0; }
+  }
 </style>
 {% endblock %}

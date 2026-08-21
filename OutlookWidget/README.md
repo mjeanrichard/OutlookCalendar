@@ -9,8 +9,9 @@ Graph instead, so the panel shows the private calendar as it actually is.
 
 | Folder | Kind | What it is |
 | --- | --- | --- |
-| `outlook_core/` | `data` | Sign-in, token handling, calendar list, caching. No widget of its own. |
+| `outlook_core/` | `data` | Sign-in, token handling, calendar list, caching, the family. No widget of its own. |
 | `outlook_week/` | `widget` | The next N days grouped by day. |
+| `outlook_family/` | `widget` | The family timetable: a column per day, a colour and pattern per person. |
 
 Everything else at the repo root is development scaffolding: `devserver.py`,
 `conftest.py`, `_devsupport.py`, `_tests/`, `_docs/`. The underscore prefixes are
@@ -18,8 +19,9 @@ load-bearing — Tesserae treats every other folder here as a plugin.
 
 ## Status
 
-Structure and data layer are done and tested. `outlook_week`'s `client.js` is
-still a placeholder list: the real per-size layout is the next step.
+`outlook_core` and `outlook_family` are done and tested. `outlook_week`'s
+`client.js` is still a placeholder list; its real per-size layout is a separate
+task.
 
 ## Setup
 
@@ -105,11 +107,49 @@ has, so a widened setting can never invalidate a working sign-in.)
 1. Open **Plugins → Outlook** (`/plugins/outlook_core/`) and press *Sign in with
    Microsoft*. Enter the code it shows at <https://microsoft.com/devicelogin>,
    then come back and press *Check sign-in*.
-2. Drop **Outlook, Week Ahead** onto a dashboard and pick which calendars it
-   should show (empty = your default calendar).
+2. Drop **Outlook, Week Ahead** or **Outlook, Family Week** onto a dashboard and
+   pick which calendars it should show (empty = your default calendar).
 
 Only the refresh token is stored, in `data/plugins/outlook_core/token.json`.
 *Sign out* deletes it.
+
+### 4. Set up the family (for the family widget)
+
+Outlook has no idea whose appointment an event is, so you tell it once, on the
+same **Plugins → Outlook** page. It applies to every panel; there is nothing
+per-dashboard to re-enter.
+
+**Family members** — a name, a letter, an accent slot and a fill pattern each.
+The letter does double duty: it is drawn on events two people share, and it is
+what a title prefix is matched against, so everyone needs their own. The
+pattern is what keeps people apart on a black-and-white panel, where every
+accent colour collapses to the same black. Accent slots run 2–6; slot 1 is
+reserved for the "now" line and today's date.
+
+**Rules** decide who owns an event. Every rule is checked against every event
+and *all* matches apply, which is how one "Elternabend" can belong to two
+people. Five kinds:
+
+| Kind | Matches | Notes |
+| --- | --- | --- |
+| Title prefix | `L: Klavier`, `LN Schwimmbad`, `PM - Elternabend` | Each letter is a member. Only fires when **every** letter is one, so `OK Meeting` is left alone. |
+| Category is | An Outlook category | Case-insensitive. |
+| Title contains | A word in the subject | Case-insensitive. |
+| Title matches | A regular expression | Refused at save time if it doesn't compile. |
+| Calendar is | The calendar an event came from | Matches the id or the name. |
+
+Two switches per rule:
+
+- **Strip** removes the matched text from the title the panel draws. Turn it on
+  for prefixes: the person is already in the block's colour and stripe, so the
+  letters are just spending width.
+- **Routine** sends the matches to a narrow gutter down the side of the day,
+  labelled vertically. School and office hours would otherwise flood the grid
+  and squeeze every real appointment into a sliver.
+
+Under the rules is a **matched nothing this week** tray. Those events still
+appear on the panel, in grey — nothing is ever hidden because a rule didn't
+fire — but the tray is how you notice a rule that has quietly stopped working.
 
 ## Development
 
@@ -159,6 +199,12 @@ outlook_week.fetch()  →  PLUGIN_REGISTRY  →  outlook_core.load_events_detail
 `calendarView` expands recurrences server-side, so there is no RRULE handling
 here. Cancelled events and events you declined are filtered out in the core, so
 every future `outlook_*` widget agrees about what a panel should show.
+
+`outlook_family` adds one step: after fetching, it calls the core's
+`resolve_events()`, which runs the family rules and hands back the same events
+annotated with `members`, `routine` and a `title` that has any matched prefix
+stripped out. Ownership is therefore resolved once, on the server, and no
+widget needs to know how it was configured.
 
 ## Publishing
 

@@ -25,10 +25,12 @@ Flask-resolving defaults, so the logic is unit-testable without an app context.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import logging
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -39,10 +41,34 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Blueprint, current_app, flash, redirect, render_template, url_for
+from app.tz_resolve import app_timezone
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from werkzeug.wrappers import Response
 
 _log = logging.getLogger(__name__)
+
+
+def _sibling(name: str) -> Any:
+    """Import a module that lives next to this one.
+
+    The host loads ``server.py`` by file path under the synthetic name
+    ``_tesserae_plugins.<id>.server``, and never creates the parent packages,
+    so ``from . import family`` has nothing to resolve against and the plugin
+    folder isn't on ``sys.path`` either. Loading the sibling explicitly is the
+    only way to keep a plugin in more than one module.
+    """
+    path = Path(__file__).with_name(f"{name}.py")
+    spec = importlib.util.spec_from_file_location(f"{__name__}.{name}", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - packaging error
+        raise ImportError(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+family = _sibling("family")
+FamilyError = family.FamilyError
 
 PLUGIN_ID = "outlook_core"
 LOGIN_ROOT = "https://login.microsoftonline.com"
@@ -850,15 +876,87 @@ def status(cfg: AppConfig | None = None, data_dir: Path | None = None) -> dict[s
     }
 
 
+# ----- family -----------------------------------------------------------
+#
+# The household is a property of the install, not of a dashboard cell — you
+# would never want to re-enter it for a second panel — so it is configured
+# once here and read by every outlook_* widget through the registry.
+
+
+def _family_path(data_dir: Path) -> Path:
+    return data_dir / family.FAMILY_FILE
+
+
+def family_config(data_dir: Path | None = None) -> dict[str, Any]:
+    """Members + rules, falling back to the default config on a first run or a
+    file someone hand-edited into something unreadable."""
+    dd = data_dir if data_dir is not None else _data_dir()
+    stored = _read_json(_family_path(dd))
+    if not stored:
+        return family.default_config()
+    try:
+        return family.clean_config(stored)
+    except family.FamilyError as err:
+        _log.warning("outlook_core: ignoring unusable family.json (%s)", err)
+        return family.default_config()
+
+
+def save_family(config: dict[str, Any], data_dir: Path | None = None) -> dict[str, Any]:
+    """Validate and persist. Raises :class:`FamilyError` with a sentence the
+    admin page can flash straight at the user."""
+    dd = data_dir if data_dir is not None else _data_dir()
+    cleaned = family.clean_config(config)
+    _write_json(_family_path(dd), cleaned)
+    return cleaned
+
+
+def family_roster(data_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Just the members, for a widget's member picker and its legend."""
+    return family.roster(family_config(data_dir))
+
+
+def resolve_events(
+    events: list[dict[str, Any]],
+    config: dict[str, Any] | None = None,
+    *,
+    data_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Annotate events with ``members`` / ``routine`` / ``title``.
+
+    This is the second half of the contract with the outlook_* widgets, next
+    to :func:`load_events_detailed`: the widget fetches, then resolves, and
+    never has to know how ownership is configured.
+    """
+    cfg = config if config is not None else family_config(data_dir)
+    return family.resolve_events(events, cfg)
+
+
+def family_report(
+    events: list[dict[str, Any]],
+    config: dict[str, Any] | None = None,
+    *,
+    data_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Per-rule hit counts and the events nothing claimed, for the admin page."""
+    cfg = config if config is not None else family_config(data_dir)
+    return family.report(events, cfg)
+
+
 # ----- host hooks -----------------------------------------------------
 
 
 def choices(name: str) -> list[dict[str, str]]:
-    """Dropdown contents for the widgets' ``choices_from: "calendars"``.
+    """Dropdown contents for the widgets' ``choices_from:`` fields.
 
     The host calls ``choices()`` on the widget, which delegates here through
     the plugin registry. Errors render as an empty dropdown, so never raise.
     """
+    if name == "family_members":
+        try:
+            return [{"value": m["id"], "label": m["name"]} for m in family_roster()]
+        except RuntimeError as err:  # no app context / plugin not registered
+            _log.info("outlook_core: no family choices available (%s)", err)
+            return []
     if name != "calendars":
         return []
     try:
@@ -869,6 +967,117 @@ def choices(name: str) -> list[dict[str, str]]:
     except (OutlookError, RuntimeError) as err:
         _log.info("outlook_core: no calendar choices available (%s)", err)
         return []
+
+
+# ----- admin form plumbing --------------------------------------------
+#
+# Both family forms are plain parallel-list POSTs with no JavaScript: every
+# row submits its fields in DOM order, checkboxes submit their row index, and
+# the always-present blank row at the bottom is what "add" means. A row whose
+# name is empty is dropped, which is also how the blank row disappears again.
+
+
+def _members_from_form(form: Any) -> list[dict[str, Any]]:
+    everyone = set(form.getlist("member_everyone"))
+    deleted = set(form.getlist("member_delete"))
+    names = form.getlist("member_name")
+    ids = form.getlist("member_id")
+    letters = form.getlist("member_letter")
+    accents = form.getlist("member_accent")
+    patterns = form.getlist("member_pattern")
+
+    out: list[dict[str, Any]] = []
+    for i, name in enumerate(names):
+        if not str(name).strip() or str(i) in deleted:
+            continue
+        out.append(
+            {
+                "id": ids[i] if i < len(ids) else "",
+                "name": name,
+                "letter": letters[i] if i < len(letters) else "",
+                "accent": accents[i] if i < len(accents) else family.ACCENT_MIN,
+                "pattern": patterns[i] if i < len(patterns) else "solid",
+                "everyone": str(i) in everyone,
+            }
+        )
+    return out
+
+
+def _rules_from_form(form: Any) -> list[dict[str, Any]]:
+    strip = set(form.getlist("rule_strip"))
+    routine = set(form.getlist("rule_routine"))
+    deleted = set(form.getlist("rule_delete"))
+    kinds = form.getlist("rule_kind")
+    values = form.getlist("rule_value")
+    ids = form.getlist("rule_id")
+    orders = form.getlist("rule_order")
+
+    rows: list[tuple[int, dict[str, Any]]] = []
+    for i, kind in enumerate(kinds):
+        if str(i) in deleted:
+            continue
+        value = values[i] if i < len(values) else ""
+        # The blank row at the bottom only becomes a rule once it has
+        # something to match on — except the prefix rule, which needs no value.
+        if kind != "prefix" and not str(value).strip():
+            continue
+        try:
+            order = int(orders[i]) if i < len(orders) and str(orders[i]).strip() else i
+        except ValueError:
+            order = i
+        rows.append(
+            (
+                order,
+                {
+                    "id": ids[i] if i < len(ids) and str(ids[i]).strip() else f"rule-{i + 1}",
+                    "kind": kind,
+                    "value": value,
+                    "members": form.getlist(f"rule_members_{i}"),
+                    "strip": str(i) in strip,
+                    "routine": str(i) in routine,
+                },
+            )
+        )
+    rows.sort(key=lambda row: row[0])
+    return [rule for _order, rule in rows]
+
+
+def _week_report(
+    state: dict[str, Any], config: dict[str, Any], calendar_id: str = ""
+) -> dict[str, Any] | None:
+    """Per-rule counts and the unmatched tray, over the coming week.
+
+    ``calendar_id`` narrows the preview to one calendar, which is how you check
+    a rule against the calendar it was written for instead of against
+    everything at once. Empty means every calendar.
+
+    Costs one Graph window — cached for ten minutes like every other read, so
+    opening the page repeatedly is free. Skipped entirely until the family has
+    members: before that every event would be unmatched, which tells nobody
+    anything and isn't worth a fetch on a page you may only be visiting to
+    sign in.
+
+    Best-effort otherwise: the admin page has to render when Graph is down, so
+    a failure here just means the counts aren't shown.
+    """
+    if not state.get("signed_in") or not config.get("members"):
+        return None
+    try:
+        start = datetime.now(app_timezone()).replace(hour=0, minute=0, second=0, microsecond=0)
+        detailed = load_events_detailed(
+            [calendar_id] if calendar_id else None, start, start + timedelta(days=7)
+        )
+    except (OutlookError, RuntimeError) as err:
+        _log.info("outlook_core: no family report available (%s)", err)
+        return None
+    return family_report(list(detailed.get("events") or []), config)
+
+
+def _back() -> str:
+    """Back to the admin page, keeping whichever calendar the preview was
+    scoped to — losing it on every save would make the picker useless."""
+    calendar = str(request.form.get("preview_calendar") or "")
+    return url_for(".index", calendar=calendar) if calendar else url_for(".index")
 
 
 def blueprint() -> Blueprint:
@@ -883,14 +1092,68 @@ def blueprint() -> Blueprint:
                 calendars = list_calendars()
             except OutlookError as err:
                 flash(str(err), "error")
+        config = family_config()
+        # Only honour a calendar we actually know about, so a stale bookmark
+        # can't silently scope the preview to nothing.
+        known = {c["id"] for c in calendars}
+        preview = request.args.get("calendar", "")
+        preview = preview if preview in known else ""
         return render_template(
             "outlook_core/index.html",
             status=state,
             calendars=calendars,
+            family=config,
+            preview_calendar=preview,
+            report=_week_report(state, config, preview),
+            patterns=family.PATTERNS,
+            rule_kinds=family.RULE_KINDS,
+            kind_labels=family.KIND_LABELS,
+            accent_names=family.ACCENT_NAMES,
+            accent_hex=family.ACCENT_HEX,
+            accents=range(family.ACCENT_MIN, family.ACCENT_MAX + 1),
             scopes=(
                 f"{SCOPES} {SHARED_SCOPE}" if _settings().get("read_shared") else SCOPES
             ).split(),
         )
+
+    @bp.post("/family/members")
+    def save_members() -> Response:
+        config = family_config()
+        try:
+            submitted = _members_from_form(request.form)
+            # Resolve the ids first: a new row posts an empty hidden id, and
+            # the real one is derived from the name inside clean_config. Using
+            # the raw ids here would prune every rule down to nothing.
+            live = {m["id"] for m in family.clean_config({"members": submitted})["members"]}
+            # Deleting a member takes their rule references with them, and any
+            # rule left pointing at nobody goes too — removing a person should
+            # never leave the page refusing to save.
+            config["members"] = submitted
+            config["rules"] = [
+                {**rule, "members": [m for m in rule["members"] if m in live]}
+                for rule in config["rules"]
+            ]
+            config["rules"] = [
+                rule
+                for rule in config["rules"]
+                if rule["members"] or rule["routine"] or rule["kind"] == "prefix"
+            ]
+            save_family(config)
+            flash("Family updated.", "success")
+        except FamilyError as err:
+            flash(str(err), "error")
+        return redirect(_back())
+
+    @bp.post("/family/rules")
+    def save_rules() -> Response:
+        config = family_config()
+        try:
+            config["rules"] = _rules_from_form(request.form)
+            save_family(config)
+            flash("Rules updated.", "success")
+        except FamilyError as err:
+            flash(str(err), "error")
+        return redirect(_back())
 
     @bp.post("/signin")
     def signin() -> Response:

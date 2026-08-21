@@ -1,0 +1,666 @@
+/**
+ * outlook_family, the family timetable.
+ *
+ * One column per day starting today, a fixed hour window down the side, and
+ * every block wearing its owner's accent slot, fill pattern and — when more
+ * than one person is involved — their initials.
+ *
+ * Three rules about spending pixels, because the title has first claim on all
+ * of them:
+ *
+ *   1. Routine (school, office hours) goes to a narrow gutter down the left
+ *      of the day with its label set vertically, so it costs no width.
+ *   2. A shared event splits its owner stripe between the people involved
+ *      rather than prefixing the title with their names.
+ *   3. Out-of-window events become a counted chevron at the column's edge.
+ *      The grid keeps its shape between refreshes; nothing rescales.
+ *
+ * Ownership is resolved server-side by outlook_core's family rules, so every
+ * event arrives with `members`, `routine` and an already-stripped `title`.
+ */
+
+// One routine slot. Wide enough that a vertical label still has room to
+// read after the stripe takes its 2px; a day with no routine has no gutter.
+const GUTTER_PX = 15;
+const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const MONTH = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+               "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+// How much text a block can hold is decided in CSS, by container queries on
+// the block itself — see styles(). It has to be: a threshold in percent of
+// the visible window means 40px at lg and 17px at md, and the md case then
+// runs the title and the time into each other. The block's own height in
+// pixels is the only thing that actually answers the question.
+
+export default function render(shadow, ctx) {
+  const data = ctx?.data ?? {};
+  const size = ctx?.cell?.size ?? "lg";
+  const css = `<link rel="stylesheet" href="/static/style/spectra-widgets.css">`;
+
+  if (data.error) {
+    shadow.innerHTML = `
+      ${css}
+      <div class="w size-${size}" data-widget="outlook_family">
+        <div class="w-title"><h3>Familie</h3></div>
+        <div class="w-body list-body">
+          <div class="u-muted"><i class="ph-bold ph-warning-circle"></i> ${esc(data.error)}</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const members = new Map((data.members || []).map((m) => [m.id, m]));
+  const days = Array.isArray(data.days) ? data.days : [];
+  const hours = data.hours || { start: 7, end: 21 };
+  const span = Math.max(1, hours.end - hours.start);
+  const useGutter = data.routine_gutter !== false;
+
+  if (!days.length) {
+    shadow.innerHTML = `
+      ${css}
+      <div class="w size-${size}" data-widget="outlook_family">
+        <div class="w-title"><h3>Familie</h3></div>
+        <div class="w-body list-body"><div class="u-muted">Nothing scheduled.</div></div>
+      </div>`;
+    return;
+  }
+
+  const lanes = days
+    .map((day) => laneHtml(day, { members, hours, useGutter, data }))
+    .join("");
+
+  const heads = days.map((day) => headHtml(day)).join("");
+  const bands = bandsHtml(data.bands || [], days.length, members);
+
+  // The zoom-locked .w-title rather than the .cal-head hero: that header is
+  // sized with --fs-jumbo, which is right when the date is the content (as in
+  // calendar_day) and wrong here, where it would eat a third of the panel the
+  // grid needs.
+  shadow.innerHTML = `
+    ${css}
+    <style>${styles(span)}</style>
+    <div class="w size-${size}" data-widget="outlook_family">
+      <div class="w-title">
+        <i class="ph-bold ph-users-three" style="color:var(--accent-4)"></i>
+        <h3>Familie</h3>
+        <span class="w-title-meta">${esc(rangeLabel(days))}${data.stale ? " · cached" : ""}</span>
+      </div>
+      <div class="w-body cal-body">
+        ${legendHtml(data.members || [])}
+        <div class="of-grid" style="grid-template-columns:2.6em repeat(${days.length},minmax(0,1fr));
+             grid-template-rows:auto ${bands ? "auto" : ""} minmax(0,1fr)">
+          <div></div>
+          ${heads}
+          ${bands ? `<div></div><div class="of-bands"
+             style="grid-column:2/-1;grid-template-columns:repeat(${days.length},minmax(0,1fr))">${bands}</div>` : ""}
+          <div class="tt-hours">${hourLabels(hours)}</div>
+          ${lanes}
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------- members ---------- */
+
+// A member's colour is an accent *slot*, never a hex: the active theme owns
+// the hue, so the widget keeps working when the panel theme changes. Slot 1 is
+// the design system's alerts/"now" role and is never assigned to a person.
+function accent(member) {
+  const slot = Math.min(6, Math.max(2, Number(member?.accent) || 4));
+  return {
+    line: `var(--accent-${slot})`,
+    fill: `var(--accent-${slot}-soft)`,
+  };
+}
+
+// Unassigned events are drawn, never hidden: an event vanishing because a
+// rule stopped firing is the failure nobody would notice.
+const UNOWNED = { line: "var(--text-muted)", fill: "var(--surface-sunken)" };
+
+function paint(member) {
+  const { line, fill } = member ? accent(member) : UNOWNED;
+  // --of-line is the pattern stroke. There's no token for "accent at low
+  // alpha", so this is the one place color-mix earns its keep; the fill
+  // itself uses the accent's own -soft companion.
+  return `--of-line:${line};--of-fill:${fill};` +
+    `--of-stroke:color-mix(in oklab, ${line} 34%, transparent)`;
+}
+
+function ownersOf(event, members) {
+  return (event.members || []).map((id) => members.get(id)).filter(Boolean);
+}
+
+function patternClass(owners) {
+  const pattern = owners.length ? owners[0].pattern : "solid";
+  return `of-p-${["solid", "diag", "dots", "horiz", "cross"].includes(pattern) ? pattern : "solid"}`;
+}
+
+// The stripe is a child element, not a border, so several owners can share it
+// as hard-stop gradient segments. This is what lets a shared event say who
+// it belongs to without taking a single pixel from the title.
+function stripeHtml(owners) {
+  if (owners.length < 2) {
+    const colour = owners.length ? accent(owners[0]).line : UNOWNED.line;
+    return `<span class="of-stripe" style="background:${colour}"></span>`;
+  }
+  const step = 100 / owners.length;
+  const stops = owners
+    .map((m, i) => `${accent(m).line} ${(i * step).toFixed(2)}% ${((i + 1) * step).toFixed(2)}%`)
+    .join(",");
+  return `<span class="of-stripe" style="background:linear-gradient(to bottom,${stops})"></span>`;
+}
+
+// Initials only earn their place on a shared event, and they ride on the meta
+// line next to the time — secondary text, never in front of the title.
+function initialsHtml(owners) {
+  if (owners.length < 2) return "";
+  return owners
+    .map((m) => `<span class="of-mark" style="background:${accent(m).line}">${esc(m.letter || "·")}</span>`)
+    .join("");
+}
+
+function legendHtml(roster) {
+  if (!roster.length) return "";
+  const chips = roster
+    .map((m) => `
+      <span class="of-key">
+        <span class="of-key-chip ${patternClass([m])}" style="${paint(m)};background-color:${accent(m).line}">${esc(m.letter || "·")}</span>
+        <span class="of-key-name">${esc(m.name || "")}</span>
+      </span>`)
+    .join("");
+  return `<div class="of-legend">${chips}</div>`;
+}
+
+/* ---------- time ---------- */
+
+// Parse through Date so the hour is in the renderer's local timezone rather
+// than whatever offset is baked into the ISO string.
+function hourOf(iso) {
+  const d = new Date(String(iso));
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.getHours() + d.getMinutes() / 60;
+}
+
+function dateKey(iso) {
+  const d = new Date(String(iso));
+  if (!Number.isFinite(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function fmtHm(iso) {
+  const d = new Date(String(iso));
+  if (!Number.isFinite(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// A timed event can run past midnight, and the server hands the same event to
+// every day it touches. Only the real start day keeps the real start hour;
+// only the real end day keeps the real end hour. Without this a Sunday 16:00
+// → Friday 10:00 trip would redraw a 16:00 block on every day in between.
+export function clampToDay(event, date) {
+  const start = hourOf(event.start);
+  if (start == null) return null;
+  const startsHere = dateKey(event.start) === date;
+  const endsHere = dateKey(event.end) === date;
+  const top = startsHere ? start : 0;
+  let bottom = endsHere ? hourOf(event.end) : 24;
+  if (bottom == null || bottom <= top) bottom = Math.min(24, top + 0.5);
+  return { top, bottom };
+}
+
+// Clamp each edge into the window *before* deriving the height, so a
+// pass-through day of a multi-day event stops at the lane's edge instead of
+// spilling past it.
+export function pctSpan(top, bottom, hours) {
+  const size = Math.max(1, hours.end - hours.start);
+  const a = Math.max(0, Math.min(100, ((top - hours.start) / size) * 100));
+  const b = Math.max(0, Math.min(100, ((bottom - hours.start) / size) * 100));
+  return { top: a, height: Math.max(1, b - a) };
+}
+
+/* ---------- packing ---------- */
+
+// Greedy interval packing: concurrent events split the column between them.
+// Routine is packed separately in the gutter, which is what usually keeps
+// this down to a single full-width block on an ordinary weekday.
+export function packColumns(items) {
+  const ends = [];
+  const placed = items
+    .slice()
+    .sort((a, b) => a.top - b.top || b.bottom - a.bottom)
+    .map((item) => {
+      let column = ends.findIndex((end) => end <= item.top);
+      if (column === -1) {
+        column = ends.length;
+        ends.push(item.bottom);
+      } else {
+        ends[column] = item.bottom;
+      }
+      return { ...item, column };
+    });
+  return { placed, columns: Math.max(1, ends.length) };
+}
+
+/* ---------- rendering ---------- */
+
+function headHtml(day) {
+  const classes = ["of-head"];
+  if (day.is_today) classes.push("is-today");
+  if (day.is_weekend) classes.push("is-weekend");
+  const dow = DOW[new Date(`${day.date}T00:00:00`).getDay()] || "";
+  return `
+    <div class="${classes.join(" ")}">
+      <span class="of-dow">${esc(dow)}</span>
+      <span class="of-num">${esc(String(day.day ?? ""))}</span>
+    </div>`;
+}
+
+function bandsHtml(bands, dayCount, members) {
+  if (!bands.length) return "";
+  // Greedy lane packing so two overlapping all-day bars stack instead of
+  // colliding on the same row.
+  const laneEnds = [];
+  return bands
+    .slice()
+    .sort((a, b) => a.first - b.first)
+    .map((band) => {
+      let lane = laneEnds.findIndex((end) => end < band.first);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(band.last);
+      } else {
+        laneEnds[lane] = band.last;
+      }
+      const owners = ownersOf(band, members);
+      const columns = Math.min(dayCount - band.first, band.last - band.first + 1);
+      return `
+        <div class="of-band ${patternClass(owners)}"
+             style="${paint(owners[0])};grid-column:${band.first + 1} / span ${columns};grid-row:${lane + 1}">
+          ${stripeHtml(owners)}
+          ${initialsHtml(owners)}
+          <span class="of-band-name">${esc(band.title || band.summary || "")}</span>
+        </div>`;
+    })
+    .join("");
+}
+
+function laneHtml(day, opts) {
+  const { members, hours, useGutter, data } = opts;
+  const all = (day.events || []).map((event) => {
+    const clamped = clampToDay(event, day.date);
+    return clamped ? { event, ...clamped } : null;
+  }).filter(Boolean);
+
+  const inside = all.filter((item) => item.bottom > hours.start && item.top < hours.end);
+  const before = all.filter((item) => item.bottom <= hours.start);
+  const after = all.filter((item) => item.top >= hours.end);
+
+  const routine = useGutter ? inside.filter((item) => item.event.routine) : [];
+  const appointments = useGutter ? inside.filter((item) => !item.event.routine) : inside;
+
+  // Every member with routine today gets a fixed slot, in roster order, so
+  // the gutter reads as the same shape of "who is tied up" every day.
+  const slots = [...members.keys()].filter((id) =>
+    routine.some((item) => (item.event.members || []).includes(id)));
+  const gutterWidth = slots.length * GUTTER_PX;
+
+  const bars = routine.map((item) => {
+    const owners = ownersOf(item.event, members);
+    const indices = (item.event.members || [])
+      .map((id) => slots.indexOf(id))
+      .filter((i) => i >= 0);
+    const from = indices.length ? Math.min(...indices) : 0;
+    const to = indices.length ? Math.max(...indices) : 0;
+    const { top, height } = pctSpan(item.top, item.bottom, hours);
+    return `
+      <div class="of-bar ${patternClass(owners)}"
+           style="${paint(owners[0])};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
+                  left:${from * GUTTER_PX}px;width:${(to - from + 1) * GUTTER_PX - 1}px">
+        <span class="of-bar-name">${esc(item.event.title || item.event.summary || "")}</span>
+      </div>`;
+  }).join("");
+
+  const { placed, columns } = packColumns(appointments.map((item) => ({
+    ...item,
+    ...pctSpan(item.top, item.bottom, hours),
+  })));
+
+  const blocks = placed.map((item) => {
+    const event = item.event;
+    const owners = ownersOf(event, members);
+    const width = 100 / columns;
+    const left = item.column * width;
+    // Everything is emitted; the CSS drops the meta line, then the title, as
+    // the block gets shorter. Two-line titles are also a CSS decision, but
+    // only where a column is wide enough to be worth wrapping into.
+    return `
+      <div class="of-ev ${patternClass(owners)} ${columns < 3 ? "can-wrap" : ""} ${event.routine ? "is-routine" : ""}"
+           style="${paint(owners[0])};top:${item.top.toFixed(2)}%;height:${item.height.toFixed(2)}%;
+                  left:calc(${left}% + 1px);width:calc(${width}% - 2px)">
+        ${stripeHtml(owners)}
+        <span class="of-name">${esc(event.title || event.summary || "")}</span>
+        <span class="of-meta">${initialsHtml(owners)}<span class="of-time">${esc(fmtHm(event.start))}</span></span>
+        ${data.show_location && event.location
+          ? `<span class="of-loc"><i class="ph-bold ph-map-pin"></i>${esc(event.location)}</span>`
+          : ""}
+      </div>`;
+  }).join("");
+
+  const nowHour = data.now ? hourOf(data.now) : null;
+  const showNow = day.is_today && nowHour != null && nowHour >= hours.start && nowHour <= hours.end;
+  const nowPct = showNow ? ((nowHour - hours.start) / Math.max(1, hours.end - hours.start)) * 100 : 0;
+
+  const classes = ["of-lane"];
+  if (day.is_weekend) classes.push("is-weekend");
+  if (day.is_today) classes.push("is-today");
+
+  return `
+    <div class="${classes.join(" ")}">
+      ${gutterWidth ? `<div class="of-gutter" style="width:${gutterWidth}px">${bars}</div>` : ""}
+      <div class="of-main">
+        ${blocks}
+        ${showNow ? `<div class="tt-now" style="top:${nowPct.toFixed(2)}%"></div>` : ""}
+        ${edgeHtml(before, members, "up")}
+        ${edgeHtml(after, members, "down")}
+      </div>
+    </div>`;
+}
+
+// A counted chevron rather than a rescaled grid: the panel keeps its shape,
+// and "▲1" is enough to make you go and look.
+function edgeHtml(items, members, direction) {
+  if (!items.length) return "";
+  const owners = ownersOf(items[0].event, members);
+  const colour = owners.length ? accent(owners[0]).line : UNOWNED.line;
+  const glyph = direction === "up" ? "▲" : "▼";
+  return `
+    <div class="of-edge is-${direction}">
+      <span class="of-edge-chip">
+        <span class="of-edge-dot" style="background:${colour}"></span>${glyph}${items.length}
+      </span>
+    </div>`;
+}
+
+function hourLabels(hours) {
+  const out = [];
+  for (let h = hours.start; h <= hours.end; h++) {
+    // Counted from the window start, not from midnight, so a 07:00 start
+    // labels 07 rather than leaving the top edge blank.
+    out.push((h - hours.start) % 2 === 0
+      ? `<span>${String(h).padStart(2, "0")}</span>`
+      : `<span style="opacity:0">·</span>`);
+  }
+  return out.join("");
+}
+
+function rangeLabel(days) {
+  const first = days[0];
+  const last = days[days.length - 1];
+  if (!first || !last) return "";
+  const a = new Date(`${first.date}T00:00:00`);
+  const b = new Date(`${last.date}T00:00:00`);
+  const head = `${MONTH[a.getMonth()] || ""} ${a.getDate()}`;
+  const tail = a.getMonth() === b.getMonth()
+    ? `${b.getDate()}`
+    : `${MONTH[b.getMonth()] || ""} ${b.getDate()}`;
+  return `${head} → ${tail} · ${b.getFullYear()}`;
+}
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
+/* ---------- styles ---------- */
+
+function styles(span) {
+  return `
+    /* Our own named container for the cell-width rules. The blocks below are
+       size containers too, and an *unnamed* @container query would resolve
+       against the nearest one of those — a 130px block — instead of the cell,
+       silently applying the narrow-cell rules at every size. Naming both ends
+       keeps the two scales apart. */
+    .cal-body {
+      gap: var(--space-2);
+      container-type: inline-size;
+      container-name: ofcell;
+    }
+    .of-grid {
+      display: grid;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    /* Legend. Patterns are the redundancy that keeps members apart on a
+       black-and-white panel, where every accent slot collapses to black. */
+    .of-legend {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: var(--space-3);
+      padding-bottom: var(--space-1);
+    }
+    .of-key { display: inline-flex; align-items: center; gap: 0.4em; }
+    .of-key-chip {
+      width: 1.35em; height: 1.35em;
+      display: inline-grid; place-items: center;
+      font-size: var(--fs-caption); font-weight: var(--fw-black);
+      color: var(--on-accent);
+      border-radius: var(--radius-0, 2px);
+    }
+    .of-key-name {
+      font-size: var(--fs-caption); font-weight: var(--fw-bold);
+      color: var(--text-secondary);
+    }
+
+    /* Column heads. accent-1 is the design system's "now"/today role. */
+    .of-head {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 0.1em; padding-bottom: var(--space-1); min-width: 0;
+    }
+    .of-dow {
+      font-size: var(--fs-caption); font-weight: var(--fw-black);
+      letter-spacing: var(--ls-label);
+      text-transform: var(--label-transform, uppercase);
+      color: var(--text-muted);
+    }
+    .of-num { font-size: var(--fs-body); font-weight: var(--fw-bold); line-height: 1.1; }
+    .of-head.is-today .of-dow { color: var(--accent-1); }
+    .of-head.is-today .of-num {
+      background: var(--accent-1); color: var(--on-accent);
+      width: 1.6em; height: 1.6em;
+      display: inline-grid; place-items: center;
+      border-radius: 999px; font-weight: var(--fw-black);
+    }
+
+    .of-lane {
+      position: relative; display: flex; min-width: 0;
+      border-left: 1px solid var(--surface-sunken);
+    }
+    .of-lane:last-child { border-right: 1px solid var(--surface-sunken); }
+    /* Same tint calendar_week uses: enough to separate the weekend, not so
+       much that it reads as a slab laid over two columns. */
+    .of-lane.is-weekend { background: color-mix(in oklab, var(--text-primary) 3%, transparent); }
+    .of-gutter {
+      position: relative; flex: 0 0 auto;
+      border-right: 1px solid var(--surface-sunken);
+    }
+    .of-main {
+      position: relative; flex: 1 1 auto; min-width: 0;
+      /* One faint rule every two hours so the eye can sweep a time across
+         all the columns. Percentages resolve against the lane's height. */
+      background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc((2 * 100% / ${span}) - 1px),
+        var(--surface-sunken) calc((2 * 100% / ${span}) - 1px),
+        var(--surface-sunken) calc(2 * 100% / ${span})
+      );
+    }
+
+    /* Appointments. The stripe is a child, so it can be split per owner.
+       Each block is its own size container, which is what lets the rules
+       further down drop text by the block's real pixel height. */
+    .of-ev {
+      position: absolute; overflow: hidden;
+      background-color: var(--of-fill);
+      padding: 1px var(--space-1) 1px calc(var(--space-1) + 4px);
+      line-height: 1.1;
+      display: flex; flex-direction: column; gap: 0;
+      container-type: size;
+      container-name: ofev;
+    }
+    .of-ev.is-routine { opacity: 0.75; }
+    .of-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+    .of-name {
+      font-size: var(--fs-caption); font-weight: var(--fw-black);
+      color: var(--text-primary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .of-meta { display: flex; align-items: center; gap: 0.25em; min-width: 0; }
+    .of-time {
+      font-size: calc(var(--fs-caption) * 0.85); font-weight: var(--fw-bold);
+      color: var(--text-secondary); font-feature-settings: "tnum";
+    }
+    .of-loc {
+      display: inline-flex; align-items: center; gap: 0.2em;
+      font-size: calc(var(--fs-caption) * 0.8); font-weight: var(--fw-bold);
+      color: var(--text-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .of-mark {
+      display: inline-grid; place-items: center;
+      width: 1.05em; height: 1.05em; flex: 0 0 auto;
+      border-radius: var(--radius-0, 2px);
+      font-size: calc(var(--fs-caption) * 0.7); font-weight: var(--fw-black);
+      color: var(--on-accent);
+    }
+
+    /* Routine bars: vertical labels, so a long word like "Fussballtraining"
+       costs height (which the bar has) instead of width (which it doesn't). */
+    .of-bar {
+      position: absolute; overflow: hidden;
+      background-color: var(--of-fill);
+      border-left: var(--stroke-1, 2px) solid var(--of-line);
+      display: flex; justify-content: center; padding-top: 2px;
+      container-type: size;
+      container-name: ofbar;
+    }
+    .of-bar-name {
+      writing-mode: vertical-rl; text-orientation: mixed;
+      font-size: calc(var(--fs-caption) * 0.8); font-weight: var(--fw-black);
+      letter-spacing: var(--ls-label);
+      color: var(--text-secondary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-height: 100%;
+    }
+
+    /* All-day / multi-day bars across the top. */
+    .of-bands { display: grid; gap: 2px; padding-bottom: var(--space-1); }
+    .of-band {
+      position: relative; overflow: hidden;
+      display: flex; align-items: center; gap: 0.25em;
+      background-color: var(--of-fill);
+      padding: 1px var(--space-2) 1px calc(var(--space-2) + 4px);
+      min-width: 0;
+    }
+    .of-band-name {
+      font-size: var(--fs-caption); font-weight: var(--fw-black);
+      color: var(--text-primary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* Out-of-window markers. */
+    .of-edge {
+      position: absolute; left: 0; right: 0;
+      display: flex; justify-content: center;
+      z-index: 3; pointer-events: none;
+    }
+    .of-edge.is-up { top: 1px; }
+    .of-edge.is-down { bottom: 1px; }
+    .of-edge-chip {
+      display: inline-flex; align-items: center; gap: 0.2em;
+      background: var(--bg);
+      padding: 0 0.3em;
+      font-size: calc(var(--fs-caption) * 0.8); font-weight: var(--fw-black);
+      color: var(--text-muted);
+      font-feature-settings: "tnum";
+    }
+    .of-edge-dot { width: 0.5em; height: 0.5em; border-radius: var(--radius-0, 2px); }
+
+    /* Fill patterns. Redundant with colour on a Spectra panel, and the only
+       thing telling two people apart on a black-and-white one. */
+    .of-p-solid { }
+    .of-p-diag {
+      background-image: repeating-linear-gradient(45deg,
+        var(--of-stroke) 0 3px, transparent 3px 9px);
+    }
+    .of-p-dots {
+      background-image: radial-gradient(var(--of-stroke) 1.6px, transparent 1.7px);
+      background-size: 8px 8px;
+    }
+    .of-p-horiz {
+      background-image: repeating-linear-gradient(0deg,
+        var(--of-stroke) 0 2px, transparent 2px 8px);
+    }
+    .of-p-cross {
+      background-image:
+        repeating-linear-gradient(45deg, var(--of-stroke) 0 2px, transparent 2px 10px),
+        repeating-linear-gradient(-45deg, var(--of-stroke) 0 2px, transparent 2px 10px);
+    }
+    /* The legend chip fills with the accent itself, so its pattern has to
+       strike in the on-accent colour to stay visible. */
+    .of-key-chip { --of-stroke: color-mix(in oklab, var(--on-accent) 45%, transparent); }
+
+    /* How much a block says, by how tall it actually is. The order things
+       go in is the order we're willing to lose them: the time first (its
+       position on the axis already says roughly when), then the title (a row
+       of clipped letter-tops reads worse than a clean bar). Only a block with
+       room for two lines, in a column wide enough to be worth wrapping into,
+       gets a wrapped title. */
+    @container ofev (max-height: 34px) {
+      .of-meta { display: none; }
+    }
+    @container ofev (max-height: 17px) {
+      .of-name { display: none; }
+    }
+    /* Two lines of title plus the meta line need ~60px between them. Wrapping
+       any earlier clamps the second line to a lone ellipsis and pushes the
+       time out of the box. */
+    @container ofev (min-height: 62px) {
+      .of-ev.can-wrap .of-name {
+        white-space: normal; word-break: break-word; hyphens: auto;
+        display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+    }
+    /* A routine bar too short for its vertical label keeps the bar; the
+       label would only be a smear of glyph tops. */
+    @container ofbar (max-height: 42px) {
+      .of-bar-name { display: none; }
+    }
+
+    /* md is where this gets tight, and it is tight in the one direction that
+       matters: the font base doesn't shrink with the cell, so at 640x400 the
+       chrome would leave under 100px for fourteen hours of timetable. Every
+       rule here buys the lane back some height, in the order we're willing to
+       lose things: locations, then the legend, then the day-header lockup. */
+    @container ofcell (max-width: 700px) {
+      .of-loc { display: none; }
+      .of-legend { display: none; }
+      .of-head {
+        flex-direction: row; align-items: baseline;
+        justify-content: center; gap: 0.35em;
+      }
+      .of-head.is-today .of-num {
+        width: auto; height: auto; background: none;
+        color: var(--accent-1); border-radius: 0;
+      }
+      .of-num { font-size: var(--fs-caption); }
+      .tt-hours { font-size: calc(var(--fs-caption) * 0.85); }
+    }
+    @container ofcell (max-width: 480px) {
+      .of-meta { display: none; }
+    }
+  `;
+}

@@ -20,7 +20,7 @@ from flask import Flask
 
 from _devsupport import TESSERAE_REPO, WIDGET_ROOT
 
-PLUGIN_IDS = ("outlook_core", "outlook_week")
+PLUGIN_IDS = ("outlook_core", "outlook_family", "outlook_week")
 
 
 def _manifest(plugin_id: str) -> dict[str, Any]:
@@ -47,12 +47,19 @@ def test_every_host_the_code_calls_is_declared(plugin_id: str, core: Any) -> Non
     assert used <= declared, f"{plugin_id} would be denied at the socket layer"
 
 
-def test_the_widget_declares_its_settings_dependency() -> None:
-    assert "settings:plugin/outlook_core" in _manifest("outlook_week")["requires"]
+@pytest.mark.parametrize("plugin_id", ["outlook_week", "outlook_family"])
+def test_the_widgets_declare_their_settings_dependency(plugin_id: str) -> None:
+    assert "settings:plugin/outlook_core" in _manifest(plugin_id)["requires"]
 
 
-def test_the_widget_supports_every_cell_size() -> None:
+def test_the_week_widget_supports_every_cell_size() -> None:
     assert _manifest("outlook_week")["supports"]["sizes"] == ["xs", "sm", "md", "lg"]
+
+
+def test_the_family_widget_skips_the_sizes_a_timetable_cannot_hold() -> None:
+    """Seven columns and a fourteen-hour axis need room; xs (180x180) and sm
+    (380x240) would be a grid of unlabelled slivers."""
+    assert _manifest("outlook_family")["supports"]["sizes"] == ["md", "lg"]
 
 
 def test_no_cell_option_is_named_label() -> None:

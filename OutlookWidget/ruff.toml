@@ -1,0 +1,18 @@
+# Mirrors the Tesserae repo's ruff settings so this widget's code reads the same
+# as the bundled plugins it sits next to (see <clone>/pyproject.toml).
+line-length = 100
+target-version = "py311"
+extend-exclude = ["_docs"]
+
+[lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E501",   # line length is the formatter's job
+    "RUF001", # we use × and – deliberately in prose
+    "RUF002",
+    "RUF003",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"

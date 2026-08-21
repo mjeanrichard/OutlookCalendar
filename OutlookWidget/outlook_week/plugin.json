@@ -1,0 +1,69 @@
+{
+  "tesserae_compat": "1.x",
+  "name": "Outlook, Week Ahead",
+  "version": "0.1.0",
+  "kind": "widget",
+  "description": "The next few days of your Outlook calendar, grouped by day. Reads the account signed in on the Outlook Core page; shows location, tentative/accepted status and Outlook categories. Cancelled and declined events are left out.",
+  "icon": "ph-calendar-dots",
+  "supports": { "sizes": ["xs", "sm", "md", "lg"] },
+  "cell_options": [
+    {
+      "name": "calendars",
+      "type": "multiselect",
+      "label": "Calendars",
+      "choices_from": "calendars",
+      "help": "Leave empty for your default Outlook calendar."
+    },
+    {
+      "name": "days_ahead",
+      "type": "number",
+      "label": "Days ahead (including today)",
+      "default": 7
+    },
+    {
+      "name": "max_events",
+      "type": "number",
+      "label": "Max events (0 = all)",
+      "default": 0
+    }
+  ],
+  "updates": {
+    "on_schedule": [{ "kind": "daily", "suggested_at": "06:00" }]
+  },
+  "render": { "dither": "none", "needs_network": true },
+  "requires": [
+    "network:login.microsoftonline.com",
+    "network:graph.microsoft.com",
+    "settings:plugin/outlook_core"
+  ],
+  "data_schema": {
+    "color": "#0F6CBD",
+    "fields": [
+      { "name": "count", "type": "num", "label": "Event count" },
+      { "name": "days", "type": "arr", "label": "Days" },
+      { "name": "stale", "type": "str", "label": "Serving cached data" }
+    ],
+    "sample": {
+      "count": 2,
+      "stale": false,
+      "days": [
+        {
+          "date": "2026-08-20",
+          "weekday": "Thursday",
+          "events": [
+            {
+              "summary": "Sprint review",
+              "start": "2026-08-20T09:30:00+02:00",
+              "end": "2026-08-20T10:00:00+02:00",
+              "all_day": false,
+              "location": "Room 4.12",
+              "show_as": "busy",
+              "response": "accepted",
+              "categories": ["Team"]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

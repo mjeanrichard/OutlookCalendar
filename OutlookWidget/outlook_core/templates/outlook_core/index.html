@@ -1,0 +1,120 @@
+{% extends "_base.html" %}
+{% from "_components.html" import card_head, button, empty_state %}
+{% block title %}Outlook Core, Tesserae{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1><i class="ph-bold ph-calendar-dots" aria-hidden="true"></i> Outlook</h1>
+  <p class="page-blurb">Sign in once with your Microsoft account; the Outlook widgets then read your
+    calendars through this plugin. Sign-in uses the device-code flow, so this machine never handles
+    your password and needs no public URL.</p>
+</div>
+
+{% if not status.configured %}
+<section class="card">
+  {{ card_head('Set up the app registration', icon_name='wrench', level=2) }}
+  <p class="field-help" style="margin-top:0">{{ status.problem }}</p>
+  <ol class="ow-steps">
+    <li>In the <a href="https://entra.microsoft.com/" target="_blank" rel="noopener">Microsoft Entra
+      admin center</a>, go to <strong>App registrations → New registration</strong>. Pick the account
+      types you sign in with, and leave the redirect URI blank.</li>
+    <li>Open <strong>Authentication</strong> and set <strong>Allow public client flows</strong> to
+      <strong>Yes</strong>. The device-code flow will not start without it.</li>
+    <li>Under <strong>API permissions</strong>, add the delegated Microsoft Graph permissions
+      {% for scope in scopes %}<code>{{ scope }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</li>
+    <li>Copy the <strong>Application (client) ID</strong> into
+      <a href="{{ url_for('auth.settings_area', area='plugins') }}#outlook_core">Settings → Plugins →
+      Outlook Core</a>, then come back here.</li>
+  </ol>
+</section>
+{% else %}
+
+<section class="card">
+  {{ card_head('Account', icon_name='user-circle', level=2) }}
+  {% if status.signed_in %}
+  <ul class="ow-facts">
+    <li><span class="ow-key">Signed in as</span>
+        <span class="ow-val">{{ status.account or 'your Outlook account' }}</span></li>
+    <li><span class="ow-key">Tenant</span> <span class="ow-val"><code>{{ status.tenant }}</code></span></li>
+    <li><span class="ow-key">Access token</span>
+        <span class="ow-val">
+          {% if status.expires_in_s > 0 %}valid for {{ (status.expires_in_s // 60) }} min
+          {% else %}expired, refreshes on next render{% endif %}
+        </span></li>
+  </ul>
+  <form method="post" action="{{ url_for('outlook_core_admin.signout') }}" class="form">
+    <div class="actions">{{ button('Sign out', variant='danger', icon='sign-out') }}</div>
+  </form>
+  {% elif status.pending %}
+  <p class="field-help" style="margin-top:0">Sign-in started. Open the link, enter the code, then
+    come back and check.</p>
+  <ul class="ow-facts">
+    <li><span class="ow-key">Go to</span>
+        <span class="ow-val"><a href="{{ status.pending.verification_uri }}" target="_blank"
+          rel="noopener">{{ status.pending.verification_uri }}</a></span></li>
+    <li><span class="ow-key">Enter code</span>
+        <span class="ow-val"><code class="ow-code">{{ status.pending.user_code }}</code></span></li>
+  </ul>
+  <div class="ow-actions">
+    <form method="post" action="{{ url_for('outlook_core_admin.poll') }}" class="form">
+      <div class="actions">{{ button('Check sign-in', icon='arrows-clockwise') }}</div>
+    </form>
+    <form method="post" action="{{ url_for('outlook_core_admin.signin') }}" class="form">
+      <div class="actions">{{ button('Start over', variant='ghost', icon='arrow-counter-clockwise') }}</div>
+    </form>
+  </div>
+  {% else %}
+  <p class="field-help" style="margin-top:0">Not signed in yet.</p>
+  <form method="post" action="{{ url_for('outlook_core_admin.signin') }}" class="form">
+    <div class="actions">{{ button('Sign in with Microsoft', icon='sign-in') }}</div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  {{ card_head('Calendars', icon_name='list-bullets', level=2) }}
+  {% if calendars %}
+  <ul class="ow-list">
+    {% for calendar in calendars %}
+    <li class="ow-row">
+      <span class="ow-name">{{ calendar.name }}</span>
+      {% if calendar.is_default %}<span class="ow-chip">default</span>{% endif %}
+      <code class="ow-id">{{ calendar.id[:24] }}…</code>
+    </li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{{ url_for('outlook_core_admin.refresh_calendars') }}" class="form">
+    <div class="actions">{{ button('Refresh list', variant='ghost', icon='arrows-clockwise') }}</div>
+  </form>
+  {% else %}
+  {{ empty_state('calendar-blank', 'No calendars yet',
+                 blurb='Sign in above. Once signed in, each Outlook widget picks which of these calendars it shows.') }}
+  {% endif %}
+</section>
+{% endif %}
+
+<style>
+  .ow-steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+  .ow-facts, .ow-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+  .ow-facts li { display: flex; gap: 12px; align-items: baseline; }
+  .ow-key { min-width: 130px; opacity: 0.7; }
+  .ow-val { font-weight: 600; }
+  .ow-code { font-size: 1.4rem; letter-spacing: 0.12em; }
+  .ow-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .ow-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--t-border);
+    border-radius: 8px;
+  }
+  .ow-name { font-weight: 600; }
+  .ow-chip {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--t-border);
+  }
+  .ow-id { opacity: 0.6; font-size: 0.8rem; }
+</style>
+{% endblock %}

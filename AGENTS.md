@@ -1,0 +1,119 @@
+# AGENTS.md
+
+Instructions for AI agents working in this repository.
+
+## What this is
+
+Outlook widgets for [Tesserae](https://tesserae.ink), a self-hosted e-ink dashboard. Tesserae
+renders widgets headless in a browser and pushes the screenshot to an e-ink panel.
+
+Repo root is `Calendar/` (this file's directory). The plugins live under `OutlookWidget/`:
+
+| Path | Kind | What it is |
+| --- | --- | --- |
+| `OutlookWidget/outlook_core/` | `data` | Microsoft Graph sign-in, tokens, calendar list, caching |
+| `OutlookWidget/outlook_week/` | `widget` | Next N days, grouped by day |
+
+**The folder name is the plugin id** — there is no `id` field in `plugin.json`. Everything else
+under `OutlookWidget/` is scaffolding: `devserver.py`, `conftest.py`, `_devsupport.py`, `_tests/`,
+`_docs/` (a copy of the Tesserae docs; `_docs/widgets.md` is the authoritative widget contract),
+and `ruff.toml`, which mirrors the clone's lint/format settings.
+
+Status: structure and data layer complete and tested. `outlook_week/client.js` is a placeholder
+list — the real per-size layout is the next step.
+
+## Working agreements
+
+- **Do not run git commands** (`init`, `add`, `commit`, `push`, `tag`, …) unless explicitly asked.
+- **Every Python module carries tests.** Nothing ships untested, including the dev scaffolding.
+  No test may touch the network: `conftest.py`'s `fake_http` fixture replaces
+  `urllib.request.urlopen` and raises on any unrouted host.
+- **Never modify the Tesserae clone.** It is a read-only dependency; the only thing that belongs in
+  it is its `.venv/`. Read its source freely — it is more authoritative than the docs.
+- **Prefix non-plugin folders under `OutlookWidget/` with `_` or `.`.** That directory is a plugin
+  scan root, so a plain `docs/` or `tests/` makes the loader log "plugin.json missing".
+  `_tests/test_devsupport.py` asserts this stays true.
+
+## Environment
+
+| Thing | Path |
+| --- | --- |
+| Tesserae clone | `C:\Users\mjean\Documents\Sources\Forks\tesserae` (override with `TESSERAE_REPO`) |
+| Python | `<clone>\.venv\Scripts\python.exe` (3.11, `pip install -e ".[dev]"`) |
+| Plugins | `OutlookWidget\outlook_core\`, `OutlookWidget\outlook_week\` |
+
+```powershell
+cd OutlookWidget
+C:\Users\mjean\Documents\Sources\Forks\tesserae\.venv\Scripts\python.exe devserver.py
+C:\Users\mjean\Documents\Sources\Forks\tesserae\.venv\Scripts\python.exe -m pytest . -q
+C:\Users\mjean\Documents\Sources\Forks\tesserae\.venv\Scripts\ruff.exe check .
+```
+
+Iterate at `http://127.0.0.1:8765/_test/render?plugin=outlook_week&size=md` (`xs|sm|lg` too),
+gallery at `/_test/widgets`, theme × style grid at `/_test/matrix`. `client.js` edits need only a
+page refresh; Python edits auto-reload. The admin page is at `/plugins/outlook_core/`.
+
+### How the plugins load from outside the clone
+
+Tesserae scans its own `plugins/` plus `<data_root>/authored` and `<data_root>/marketplace`, and has
+**no config flag** for extra directories. `_devsupport.py` therefore wraps
+`app.plugin_loader.discover` to append `OutlookWidget/` to `additional_plugins_dirs` before
+`create_app()` runs; `app_factory` calls it by module attribute, so the patch also covers the
+in-process rediscover. `devserver.py` and `conftest.py` both go through that one module. No symlink,
+junction or copy is involved. If upstream changes `discover()`'s signature,
+`_tests/test_devsupport.py` fails immediately; fallbacks are a directory junction
+(`cmd /c mklink /J`, no admin needed) or a Docker bind-mount onto `/app/data/marketplace`.
+
+## Architecture notes
+
+- Plugins cannot import each other. `outlook_week` reaches the core through
+  `current_app.config["PLUGIN_REGISTRY"].get("outlook_core").server_module`, the same way
+  `calendar_day` reaches `calendar_core` in the clone.
+- **`load_events_detailed(calendar_ids, start, end, *, cfg, data_dir)` is the contract** between the
+  two plugins. Keep its event shape stable — later views (`outlook_next`, `outlook_day`) reuse it.
+  Cancelled and declined events are filtered there, once, so every widget agrees.
+- Auth is the OAuth device-code flow. Only the refresh token persists
+  (`data/plugins/outlook_core/token.json`); refresh tokens rotate, so always store what comes back.
+- `GET /me/calendars/{id}/calendarView` expands recurrences server-side — no RRULE handling here.
+  `Prefer: outlook.timezone="<IANA>"` returns local times; a fixed-offset tz has no IANA key, so
+  `_zone_name()` falls back to UTC.
+- Graph responses are cached per calendar and window for 10 minutes, keyed on a day-snapped window
+  so the key doesn't move with the clock. On an upstream failure a **stale cache is served rather
+  than an error** — the right trade for a panel.
+- `capability_scope()` is applied in exactly one place upstream (`app/composer.py:718`, around the
+  widget's `fetch()`), so **`outlook_week` must declare the Graph hosts** in `requires:` even though
+  the HTTP code lives in the core. Admin routes and `choices()` run unscoped.
+- Reusable host helpers: `app.tz_resolve.app_timezone`, `app.calendar_time.all_day_event_overlaps_date`,
+  `app.plugin_http.decode_content_encoding`, `current_app.config["SETTINGS_STORE"]`.
+
+## Widget contract essentials
+
+Authoritative: `_docs/widgets.md` and `_docs/widget-design-system.md`. Schema:
+`<clone>/schema/plugin.schema.json`. Reference widgets: `<clone>/plugins/weather_now`,
+`calendar_day`.
+
+- `client.js` exports `default function render(shadow, ctx)` painting into a Shadow DOM. Be
+  **idempotent** — overwrite `shadow.innerHTML`, never append.
+- `ctx` = `{ cell: {w, h, size, plugin_id, options}, panel, font, data, preview }`; `ctx.data` is
+  `fetch()`'s return value. The test-render page stamps it on the cell as `data-data`, which is what
+  the smoke tests assert against.
+- `server.py:fetch()` must **never raise** — return `{"error": "..."}` with a sentence a person can
+  act on ("Not signed in to Outlook yet…", not `HTTPError: 401`).
+- Link `/static/style/spectra-widgets.css` inside the shadow root; use the `.w` / `.w-title` /
+  `.w-body` shell with one archetype body class (`.list-body` or `.cal-body` suit these widgets).
+- Paint only from Spectra semantic tokens (`--bg`, `--surface`, `--surface-sunken`,
+  `--text-primary/-secondary/-muted`, `--accent-1..6`, `--on-accent`). No hard-coded hex.
+- **No** borders, animations, transitions, `requestAnimationFrame`, client-side `fetch`, or font
+  loading. `ph-bold` for big icons, never `ph-fill`.
+- Design for all four sizes (xs 180×180, sm 380×240, md 640×400, lg 1200×800) and check each —
+  `sm`/`xs` are where layouts break. Hero-over-list layouts use
+  `grid-template-rows: auto minmax(0, 1fr)`, never `1fr auto`.
+- Don't add a `variant` cell option, and don't name one `label` (the host overwrites it with the
+  app-level place name).
+
+## Publishing (later)
+
+Community catalog, as a bundle: `folders: ["outlook_core", "outlook_week"]`. Tag a release, sha256
+the GitHub tarball, PR the entry to `dmellok/tesserae-widgets`. The tarball must expose the plugin
+folders as direct children — this repo's root is `Calendar/` with the plugins two levels deeper, so
+the packaging step needs checking before submission.

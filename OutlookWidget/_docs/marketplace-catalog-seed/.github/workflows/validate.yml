@@ -1,0 +1,197 @@
+# Catalog CI: validate widgets.json end-to-end so malformed PRs die
+# at the gate. Three checks:
+#   1. widgets.json matches schema/marketplace.schema.json.
+#   2. Every release.tarball_url is fetchable + matches release.sha256.
+#   3. Every screenshot path declared in screenshot_sizes exists as a
+#      PNG under screenshots/<id>/<size>.png.
+name: Validate catalog
+
+on:
+  pull_request:
+    paths:
+      - 'widgets.json'
+      - 'schema/**'
+      - 'screenshots/**'
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validator deps
+        run: pip install jsonschema requests
+
+      - name: Validate catalog
+        run: |
+          python <<'PY'
+          import hashlib, io, json, sys, tarfile
+          from pathlib import Path
+          import jsonschema, requests
+
+          root = Path(".")
+          index = json.loads((root / "widgets.json").read_text())
+          schema = json.loads((root / "schema" / "marketplace.schema.json").read_text())
+          jsonschema.validate(index, schema)
+
+          def detect_layout(buf: bytes, primary_id: str) -> list[str]:
+              """Mirror app/marketplace.py's _detect_layout: unwrap one
+              GitHub-style envelope, then either single-widget (top-level
+              has plugin.json) or bundle (subfolders each have one)."""
+              with tarfile.open(fileobj=io.BytesIO(buf), mode="r:*") as tar:
+                  names = [m.name for m in tar.getmembers() if not m.isdir()]
+              top_dirs = sorted({n.split("/", 1)[0] for n in names if "/" in n})
+              prefix = ""
+              # Single wrapping dir + nothing else at root
+              if len(top_dirs) == 1 and all("/" in n for n in names):
+                  prefix = top_dirs[0] + "/"
+              stripped = [n[len(prefix):] for n in names]
+              # Single widget: plugin.json directly under prefix
+              if "plugin.json" in stripped:
+                  return [primary_id]
+              # Bundle: subdirs each containing plugin.json
+              folders = set()
+              for n in stripped:
+                  if "/" in n and n.endswith("/plugin.json") and n.count("/") == 1:
+                      folders.add(n.split("/", 1)[0])
+              return sorted(folders)
+
+          failures = []
+          for w in index.get("widgets", []):
+              wid = w["id"]
+              # screenshots
+              for size in w.get("screenshot_sizes", []):
+                  p = root / "screenshots" / wid / f"{size}.png"
+                  if not p.exists():
+                      failures.append(f"{wid}: missing screenshot {p}")
+                      continue
+                  if p.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+                      failures.append(f"{wid}: {p} is not a PNG (bad magic)")
+              # carousel extras: when extra_screenshot_count > 0, the
+              # contributor must ship screenshots/<id>/extra-<n>.png
+              # for n = 1..count (same 3:2 lg-size shape as the primary
+              # screenshot). Missing or non-PNG files fail CI so the
+              # Browse carousel never 404s.
+              extra_count = int(w.get("extra_screenshot_count", 0) or 0)
+              for n in range(1, extra_count + 1):
+                  p = root / "screenshots" / wid / f"extra-{n}.png"
+                  if not p.exists():
+                      failures.append(f"{wid}: missing carousel extra {p}")
+                      continue
+                  if p.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+                      failures.append(f"{wid}: {p} is not a PNG (bad magic)")
+              # tarball: fetch + sha256 + layout vs declared folders
+              rel = w["release"]
+              try:
+                  resp = requests.get(rel["tarball_url"], timeout=20)
+                  resp.raise_for_status()
+                  body = resp.content
+              except Exception as err:
+                  failures.append(f"{wid}: tarball fetch failed: {err}")
+                  continue
+              actual_sha = hashlib.sha256(body).hexdigest()
+              if actual_sha != rel["sha256"]:
+                  failures.append(
+                      f"{wid}: sha256 mismatch (declared {rel['sha256'][:12]}..., "
+                      f"got {actual_sha[:12]}...)"
+                  )
+                  continue
+              # Bundle: catalog-declared folders must match tarball.
+              # Skip for kind=theme: theme tarballs are flat <id>.json +
+              # <id>.css pairs, not plugin folders, so detect_layout
+              # (which looks for plugin.json) would always report an
+              # empty layout. Theme tarballs get their own pair-based
+              # claim check in the kind=theme block below.
+              if "folders" in w and w.get("kind") != "theme":
+                  declared = sorted(w["folders"])
+                  try:
+                      actual = detect_layout(body, wid)
+                  except Exception as err:
+                      failures.append(f"{wid}: could not detect tarball layout: {err}")
+                      continue
+                  if declared != actual:
+                      failures.append(
+                          f"{wid}: declared folders {declared} but tarball contains {actual}"
+                      )
+              # Theme: every <id>.json at the envelope root has a
+              # matching <id>.css, each manifest id matches its file
+              # stem, and each CSS targets [data-theme="<id>"]. Packs
+              # ship N pairs; single themes ship exactly one. Mirrors
+              # the host install path's validation.
+              if w.get("kind") == "theme":
+                  import io as _io
+                  import tarfile as _tar
+                  try:
+                      with _tar.open(fileobj=_io.BytesIO(body), mode="r:*") as tf:
+                          # Unwrap the envelope folder (GitHub archive style).
+                          names = tf.getnames()
+                          root_dirs = {n.split("/", 1)[0] for n in names if "/" in n}
+                          envelope = root_dirs.pop() + "/" if len(root_dirs) == 1 else ""
+                          # Flat file pairs at the envelope root.
+                          stems_json: dict[str, str] = {}
+                          stems_css: dict[str, str] = {}
+                          for member in tf.getmembers():
+                              if not member.isfile():
+                                  continue
+                              rel = member.name[len(envelope):] if envelope and member.name.startswith(envelope) else member.name
+                              if "/" in rel:
+                                  continue  # only root-level files matter
+                              if rel.endswith(".json"):
+                                  f = tf.extractfile(member)
+                                  if f is not None:
+                                      stems_json[rel[:-5]] = f.read().decode("utf-8", "replace")
+                              elif rel.endswith(".css"):
+                                  f = tf.extractfile(member)
+                                  if f is not None:
+                                      stems_css[rel[:-4]] = f.read().decode("utf-8", "replace")
+                          unpaired = sorted(set(stems_json) ^ set(stems_css))
+                          if unpaired:
+                              failures.append(
+                                  f"{wid}: theme tarball has unpaired files (missing: {unpaired!r})"
+                              )
+                              continue
+                          if not stems_json:
+                              failures.append(f"{wid}: theme tarball has no <id>.json + <id>.css pairs at root")
+                              continue
+                          discovered = sorted(stems_json)
+                          if "folders" in w:
+                              declared = sorted(w["folders"])
+                              if declared != discovered:
+                                  failures.append(
+                                      f"{wid}: theme pack declares folders {declared!r} "
+                                      f"but tarball contains {discovered!r}"
+                                  )
+                          elif discovered != [wid]:
+                              failures.append(
+                                  f"{wid}: single-theme tarball declares id {discovered[0]!r}, "
+                                  f"but catalog entry id is {wid!r}"
+                              )
+                          for tid in discovered:
+                              try:
+                                  manifest = json.loads(stems_json[tid])
+                              except Exception as err:
+                                  failures.append(f"{wid}/{tid}: theme.json is not valid JSON: {err}")
+                                  continue
+                              if manifest.get("id") != tid:
+                                  failures.append(
+                                      f"{wid}/{tid}: manifest id={manifest.get('id')!r} doesn't match file stem"
+                                  )
+                              if f'[data-theme="{tid}"]' not in stems_css[tid]:
+                                  failures.append(
+                                      f"{wid}/{tid}: css missing [data-theme={tid!r}] selector"
+                                  )
+                  except Exception as err:
+                      failures.append(f"{wid}: could not read theme tarball: {err}")
+
+          if failures:
+              print("\n".join(failures))
+              sys.exit(1)
+          print(f"OK: {len(index.get('widgets', []))} widget(s) validated")
+          PY

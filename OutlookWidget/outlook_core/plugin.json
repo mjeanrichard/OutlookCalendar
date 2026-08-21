@@ -1,0 +1,31 @@
+{
+  "tesserae_compat": "1.x",
+  "name": "Outlook Core",
+  "version": "0.1.0",
+  "kind": "data",
+  "description": "Microsoft Graph sign-in and calendar registry for the outlook_* widget family. Sign in once with the device-code flow on this plugin's admin page; the outlook_* widgets then read your calendars through it. One Graph call per calendar, cached 10 minutes.",
+  "icon": "ph-calendar-dots",
+  "supports": { "sizes": ["xs", "sm", "md", "lg"] },
+  "settings": [
+    {
+      "name": "client_id",
+      "type": "string",
+      "label": "Entra application (client) ID",
+      "default": "",
+      "help": "Register an app in the Microsoft Entra admin center, enable 'Allow public client flows', and grant the delegated Calendars.Read, offline_access and User.Read permissions. The client ID is not a secret."
+    },
+    {
+      "name": "tenant",
+      "type": "string",
+      "label": "Tenant",
+      "default": "common",
+      "help": "'common' for both work/school and personal accounts, 'organizations' for work/school only, 'consumers' for personal only, or a tenant GUID to pin one directory."
+    }
+  ],
+  "render": { "needs_network": true },
+  "requires": [
+    "network:login.microsoftonline.com",
+    "network:graph.microsoft.com",
+    "settings:plugin"
+  ]
+}

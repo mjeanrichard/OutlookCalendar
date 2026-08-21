@@ -39,6 +39,7 @@ left-hand menu of the registration you just created:
 | --- | --- | --- |
 | Public client flows | **Authentication** → *Advanced settings* → "Allow public client flows" | **Yes**. The device-code flow will not start without it. |
 | Graph permissions | **API permissions** → *Add a permission* → **Microsoft Graph** → **Delegated permissions** | `Calendars.Read`, `offline_access`, `User.Read` |
+| Shared calendars (optional) | same page | `Calendars.Read.Shared` — only if you want calendars **other people** own; see step 2 |
 
 `Calendars.ReadBasic` is not enough — it omits location, categories, `showAs`
 and `responseStatus`. If your tenant requires admin consent, an administrator
@@ -59,6 +60,7 @@ In Tesserae, open **Settings → Plugins → Outlook Core**
 | --- | --- |
 | Entra application (client) ID | The **Application (client) ID** from the registration's Overview page. |
 | Tenant | Has to match the registration's account types — see below. |
+| Read calendars shared with me | Leave **off** unless you need calendars someone else owns. See below. |
 
 *Tenant* must agree with the **Supported account types** you chose when
 registering (app registration → **Authentication** → *Supported account types*):
@@ -74,6 +76,29 @@ Leaving *Tenant* at its `common` default against a **single-tenant**
 registration fails at sign-in with `AADSTS50059: No tenant-identifying
 information found` — Entra has no way to tell which directory to authenticate
 against. Pin the GUID instead.
+
+#### Calendars other people own
+
+Your own calendars — including ones you created and shared *outward* — work with
+`Calendars.Read` alone. Reading a calendar **someone else owns** and shared with
+you additionally needs `Calendars.Read.Shared`, which is what the *Read calendars
+shared with me* setting requests.
+
+It is off by default on purpose. The Microsoft v2.0 endpoint has no partial
+consent: if a tenant won't grant a requested scope, the **entire sign-in fails**
+rather than returning a narrower token. Asking for `Calendars.Read.Shared`
+unconditionally would therefore lock out anyone whose organisation requires
+administrator approval for it, to give a capability most installs never use.
+
+So: turn it on only if you need it, and grant the matching permission in Entra.
+If sign-in then fails with `AADSTS65001` or `AADSTS90094`, either turn it back
+off or ask an administrator to consent. The **Plugins → Outlook** page reports
+which of the two states you are in under *Shared calendars*.
+
+The setting takes effect at the next **sign-in**, not immediately — a token
+carries the scopes it was issued with, so toggling it on means signing out and
+back in. (Refreshes deliberately re-request the scopes the stored token already
+has, so a widened setting can never invalidate a working sign-in.)
 
 ### 3. Sign in
 

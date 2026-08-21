@@ -5,7 +5,14 @@
   "kind": "data",
   "description": "Microsoft Graph sign-in and calendar registry for the outlook_* widget family. Sign in once with the device-code flow on this plugin's admin page; the outlook_* widgets then read your calendars through it. One Graph call per calendar, cached 10 minutes.",
   "icon": "ph-calendar-dots",
-  "supports": { "sizes": ["xs", "sm", "md", "lg"] },
+  "supports": {
+    "sizes": [
+      "xs",
+      "sm",
+      "md",
+      "lg"
+    ]
+  },
   "settings": [
     {
       "name": "client_id",
@@ -20,9 +27,18 @@
       "label": "Tenant",
       "default": "common",
       "help": "'common' for both work/school and personal accounts, 'organizations' for work/school only, 'consumers' for personal only, or a tenant GUID to pin one directory."
+    },
+    {
+      "name": "read_shared",
+      "type": "boolean",
+      "label": "Read calendars shared with me",
+      "default": false,
+      "help": "Off by default. Turn on only if you want calendars another person owns and shared with you; your own calendars work either way. This asks for the extra Calendars.Read.Shared permission at sign-in, which some organisations require an administrator to approve — if sign-in then fails, turn this back off. Changing this takes effect at the next sign-in."
     }
   ],
-  "render": { "needs_network": true },
+  "render": {
+    "needs_network": true
+  },
   "requires": [
     "network:login.microsoftonline.com",
     "network:graph.microsoft.com",

@@ -41,7 +41,18 @@
           {% if status.expires_in_s > 0 %}valid for {{ (status.expires_in_s // 60) }} min
           {% else %}expired, refreshes on next render{% endif %}
         </span></li>
+    <li><span class="ow-key">Shared calendars</span>
+        <span class="ow-val">
+          {% if status.shared_granted %}readable
+          {% elif status.wants_shared %}not granted, sign in again to request it
+          {% else %}your own calendars only{% endif %}
+        </span></li>
   </ul>
+  {% if status.wants_shared and not status.shared_granted %}
+  <p class="field-help" style="margin-top:0">This sign-in predates
+    <em>Read calendars shared with me</em>, or Microsoft declined it. Sign out and back in to
+    request it; if sign-in then fails, your organisation requires an administrator to approve it.</p>
+  {% endif %}
   <form method="post" action="{{ url_for('outlook_core_admin.signout') }}" class="form">
     <div class="actions">{{ button('Sign out', variant='danger', icon='sign-out') }}</div>
   </form>

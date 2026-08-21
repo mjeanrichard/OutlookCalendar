@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -295,3 +296,109 @@ def test_clear_token_removes_both_files(
 def test_a_corrupt_token_file_reads_as_signed_out(core: Any, core_dir: Path) -> None:
     (core_dir / "token.json").write_text("{ not json", encoding="utf-8")
     assert core.load_token(core_dir) == {}
+
+
+# ----- the optional shared-calendar scope -----------------------------
+
+
+def test_read_shared_is_off_by_default(core: Any) -> None:
+    cfg = core.app_config({"client_id": "cid"})
+    assert cfg.read_shared is False
+    assert core.SHARED_SCOPE not in cfg.scopes
+
+
+def test_read_shared_adds_the_scope_when_enabled(core: Any) -> None:
+    cfg = core.app_config({"client_id": "cid", "read_shared": True})
+    assert cfg.read_shared is True
+    assert core.SHARED_SCOPE in cfg.scopes
+    # the base scopes must survive alongside it
+    assert "Calendars.Read" in cfg.scopes
+    assert "offline_access" in cfg.scopes
+
+
+def test_sign_in_requests_the_shared_scope_only_when_asked(
+    core: Any, core_dir: Path, fake_http: Any
+) -> None:
+    fake_http.add(DEVICE_CODE_URL, _device_code_payload())
+    plain = core.AppConfig(client_id="cid")
+    core.start_device_code(plain, core_dir)
+    assert core.SHARED_SCOPE not in fake_http.last_request(DEVICE_CODE_URL).data.decode()
+
+    core.start_device_code(core.AppConfig(client_id="cid", read_shared=True), core_dir)
+    body = fake_http.last_request(DEVICE_CODE_URL).data.decode()
+    assert "Calendars.Read.Shared" in urllib.parse.unquote_plus(body)
+
+
+def test_refresh_asks_for_the_granted_scopes_not_the_configured_ones(
+    core: Any, core_dir: Path, fake_http: Any
+) -> None:
+    """Widening the request on a refresh is an error, so a token issued before
+    the setting was turned on must keep refreshing against its own scopes."""
+    core.save_token(
+        core_dir,
+        {"access_token": "", "refresh_token": "rt-old", "expires_at": 0, "scope": core.SCOPES},
+    )
+    fake_http.add(TOKEN_URL, _token_payload())
+    core.access_token(core.AppConfig(client_id="cid", read_shared=True), core_dir)
+    body = urllib.parse.unquote_plus(fake_http.last_request(TOKEN_URL).data.decode())
+    assert "Calendars.Read.Shared" not in body
+    assert "Calendars.Read" in body
+
+
+def test_refresh_falls_back_to_base_scopes_for_a_token_with_none_recorded(
+    core: Any, core_dir: Path, fake_http: Any
+) -> None:
+    core.save_token(core_dir, {"access_token": "", "refresh_token": "rt-old", "expires_at": 0})
+    fake_http.add(TOKEN_URL, _token_payload())
+    core.access_token(core.AppConfig(client_id="cid"), core_dir)
+    assert "Calendars.Read" in urllib.parse.unquote_plus(
+        fake_http.last_request(TOKEN_URL).data.decode()
+    )
+
+
+def test_has_shared_scope_reads_what_was_actually_granted(core: Any) -> None:
+    assert core.has_shared_scope({"scope": "Calendars.Read Calendars.Read.Shared User.Read"})
+    assert not core.has_shared_scope({"scope": core.SCOPES})
+    assert not core.has_shared_scope({})
+    # Calendars.Read is a prefix of Calendars.Read.Shared; don't match on it
+    assert not core.has_shared_scope({"scope": "Calendars.Read"})
+    # the identity platform is inconsistent about case
+    assert core.has_shared_scope({"scope": "calendars.read.shared"})
+
+
+def test_status_separates_wanting_the_scope_from_having_it(
+    core: Any, core_dir: Path, signed_in: dict[str, Any]
+) -> None:
+    state = core.status(core.AppConfig(client_id="cid", read_shared=True), core_dir)
+    assert state["wants_shared"] is True
+    assert state["shared_granted"] is False
+
+    core.save_token(core_dir, {**signed_in, "scope": f"{core.SCOPES} {core.SHARED_SCOPE}"})
+    state = core.status(core.AppConfig(client_id="cid", read_shared=True), core_dir)
+    assert state["shared_granted"] is True
+
+
+def test_status_reports_no_shared_grant_when_signed_out(core: Any, core_dir: Path) -> None:
+    state = core.status(core.AppConfig(client_id="cid", read_shared=True), core_dir)
+    assert state["signed_in"] is False
+    assert state["shared_granted"] is False
+
+
+def test_consent_failure_names_the_setting_to_turn_off(core: Any) -> None:
+    message = core._auth_error_message(
+        {
+            "error": "invalid_grant",
+            "error_description": "AADSTS65001: The user or administrator has not consented.",
+        },
+        "fallback",
+    )
+    assert "Read calendars shared with me" in message
+    assert message != "fallback"
+
+
+def test_admin_consent_failure_is_explained_too(core: Any) -> None:
+    message = core._auth_error_message(
+        {"error": "invalid_grant", "error_description": "AADSTS90094: Admin consent is required."},
+        "fallback",
+    )
+    assert "administrator" in message

@@ -265,9 +265,17 @@ def _auth_error_message(payload: dict[str, Any], fallback: str) -> str:
         "authorization_declined": "The sign-in was declined.",
         "expired_token": "The sign-in code expired. Start again.",
     }
+    description_raw = str(payload.get("error_description") or "")
+    # AADSTS65001: user has not consented. AADSTS90094: needs an admin.
+    if any(aadsts in description_raw for aadsts in ("AADSTS65001", "AADSTS90094")):
+        return (
+            "Microsoft wouldn't grant permission to read shared calendars. Turn off "
+            "'Read calendars shared with me' in Settings → Plugins to sign in without it, "
+            "or ask an administrator to consent."
+        )
     if code in known:
         return known[code]
-    description = str(payload.get("error_description") or "").splitlines()
+    description = description_raw.splitlines()
     if code and description:
         _log.warning("outlook_core auth error %s: %s", code, description[0])
     return fallback
@@ -285,7 +293,10 @@ def _graph_error_message(status: int, payload: dict[str, Any]) -> str:
     if status == 401:
         return "Outlook sign-in expired. Sign in again on the Outlook Core page."
     if status == 403:
-        return "Outlook denied access. Check the app has the Calendars.Read permission."
+        return (
+            "Outlook denied access to that calendar. If someone else owns it, turn on "
+            "'Read calendars shared with me' in Settings → Plugins and sign in again."
+        )
     if status == 404:
         return "That Outlook calendar no longer exists."
     if status in (429, 503):
@@ -834,6 +845,8 @@ def status(cfg: AppConfig | None = None, data_dir: Path | None = None) -> dict[s
         "account": str(token.get("account") or ""),
         "expires_in_s": max(0, int(float(token.get("expires_at") or 0) - time.time())),
         "pending": pending_device_code(dd),
+        "wants_shared": bool(resolved_cfg.read_shared) if resolved_cfg else False,
+        "shared_granted": signed_in and has_shared_scope(token),
     }
 
 
@@ -874,7 +887,9 @@ def blueprint() -> Blueprint:
             "outlook_core/index.html",
             status=state,
             calendars=calendars,
-            scopes=SCOPES.split(),
+            scopes=(
+                f"{SCOPES} {SHARED_SCOPE}" if _settings().get("read_shared") else SCOPES
+            ).split(),
         )
 
     @bp.post("/signin")

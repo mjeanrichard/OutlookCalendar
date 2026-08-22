@@ -229,6 +229,17 @@ export function pctSpan(top, bottom, hours) {
 
 /* ---------- packing ---------- */
 
+// An event that starts before the window, or ends after it, is drawn clamped
+// to the edge — which on its own looks exactly like an event that really does
+// begin at 07:00. These classes let the CSS put a small triangle on the cut
+// edge so "there is more of this above/below" is visible at a glance.
+export function clipClasses(top, bottom, hours) {
+  const out = [];
+  if (top < hours.start) out.push("clip-top");
+  if (bottom > hours.end) out.push("clip-bottom");
+  return out.join(" ");
+}
+
 // Greedy interval packing: concurrent events split the column between them.
 // Routine is packed separately in the gutter, which is what usually keeps
 // this down to a single full-width block on an ordinary weekday.
@@ -322,15 +333,19 @@ function laneHtml(day, opts) {
     const to = indices.length ? Math.max(...indices) : 0;
     const { top, height } = pctSpan(item.top, item.bottom, hours);
     return `
-      <div class="of-bar ${patternClass(owners)}"
+      <div class="of-bar ${patternClass(owners)} ${clipClasses(item.hourTop, item.hourBottom, hours)}"
            style="${paint(owners[0])};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
                   left:${from * GUTTER_PX}px;width:${(to - from + 1) * GUTTER_PX - 1}px">
         <span class="of-bar-name">${esc(item.event.title || item.event.summary || "")}</span>
       </div>`;
   }).join("");
 
+  // pctSpan overwrites `top` with a percentage, so keep the event's real hours
+  // under their own names — the clip test needs hours, not percentages.
   const { placed, columns } = packColumns(appointments.map((item) => ({
     ...item,
+    hourTop: item.top,
+    hourBottom: item.bottom,
     ...pctSpan(item.top, item.bottom, hours),
   })));
 
@@ -343,7 +358,7 @@ function laneHtml(day, opts) {
     // the block gets shorter. Two-line titles are also a CSS decision, but
     // only where a column is wide enough to be worth wrapping into.
     return `
-      <div class="of-ev ${patternClass(owners)} ${columns < 3 ? "can-wrap" : ""} ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""}"
+      <div class="of-ev ${patternClass(owners)} ${columns < 3 ? "can-wrap" : ""} ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""} ${clipClasses(item.top, item.bottom, hours)}"
            style="${paint(owners[0])};top:${item.top.toFixed(2)}%;height:${item.height.toFixed(2)}%;
                   left:calc(${left}% + 1px);width:calc(${width}% - 2px)">
         ${stripeHtml(owners)}
@@ -543,6 +558,50 @@ function styles(span) {
       color: var(--text-muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    /* "There is more of this than you can see." A block that starts before the
+       window or ends after it is drawn clamped to the edge, which otherwise
+       looks identical to one that genuinely begins at 07:00. The triangle sits
+       on the cut edge and points the way the event continues. Drawn with
+       borders rather than a glyph so it stays a crisp solid shape on e-ink at
+       any size, and centred so it never lands on the title or the corner
+       marks. */
+    .of-ev.clip-top::before,
+    .of-ev.clip-bottom::after,
+    .of-bar.clip-top::before,
+    .of-bar.clip-bottom::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      margin-left: -5px;
+      width: 0; height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      z-index: 2;
+    }
+    /* No padding to clear the triangle: reserving a band for it costs the
+       block a line of title, and the title is worth more. The triangle is
+       horizontally centred while the time is left-aligned and the owner marks
+       are right-aligned, so in practice it lands in the gap between them. */
+    .of-ev.clip-top::before,
+    .of-bar.clip-top::before {
+      top: 1px;
+      border-bottom: 6px solid var(--of-line);
+    }
+    .of-ev.clip-bottom::after,
+    .of-bar.clip-bottom::after {
+      bottom: 1px;
+      border-top: 6px solid var(--of-line);
+    }
+    /* The gutter is only ~13px wide, so its triangle hugs the left instead of
+       trying to centre in a space narrower than itself. */
+    .of-bar.clip-top::before,
+    .of-bar.clip-bottom::after {
+      left: 2px;
+      margin-left: 0;
+      border-left-width: 3px;
+      border-right-width: 3px;
+    }
+
     /* Owner marks, bottom-right. Absolute, so they take nothing from the
        title's width and nothing from the layout of the lines above them. */
     .of-marks {

@@ -150,13 +150,22 @@ function stripeHtml(owners) {
   return `<span class="of-stripe" style="background:linear-gradient(to bottom,${stops})"></span>`;
 }
 
-// Initials only earn their place on a shared event, and they ride on the meta
-// line next to the time — secondary text, never in front of the title.
+// Every owner's initial, on every block that has room for it. Colour alone
+// asks you to remember five hues and go back to the legend to decode them; the
+// letter says who outright.
 function initialsHtml(owners) {
-  if (owners.length < 2) return "";
+  if (!owners.length) return "";
   return owners
     .map((m) => `<span class="of-mark" style="background:${accent(m).line}">${esc(m.letter || "·")}</span>`)
     .join("");
+}
+
+// The same marks parked in the tile's bottom-right corner. Absolutely
+// positioned, so they cost the title no width and leave the time exactly
+// where it was, on its own line under the title.
+function marksHtml(owners) {
+  const marks = initialsHtml(owners);
+  return marks ? `<span class="of-marks">${marks}</span>` : "";
 }
 
 function legendHtml(roster) {
@@ -334,15 +343,16 @@ function laneHtml(day, opts) {
     // the block gets shorter. Two-line titles are also a CSS decision, but
     // only where a column is wide enough to be worth wrapping into.
     return `
-      <div class="of-ev ${patternClass(owners)} ${columns < 3 ? "can-wrap" : ""} ${event.routine ? "is-routine" : ""}"
+      <div class="of-ev ${patternClass(owners)} ${columns < 3 ? "can-wrap" : ""} ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""}"
            style="${paint(owners[0])};top:${item.top.toFixed(2)}%;height:${item.height.toFixed(2)}%;
                   left:calc(${left}% + 1px);width:calc(${width}% - 2px)">
         ${stripeHtml(owners)}
         <span class="of-name">${esc(event.title || event.summary || "")}</span>
-        <span class="of-meta">${initialsHtml(owners)}<span class="of-time">${esc(fmtHm(event.start))}</span></span>
+        <span class="of-meta"><span class="of-time">${esc(fmtHm(event.start))}</span></span>
         ${data.show_location && event.location
           ? `<span class="of-loc"><i class="ph-bold ph-map-pin"></i>${esc(event.location)}</span>`
           : ""}
+        ${marksHtml(owners)}
       </div>`;
   }).join("");
 
@@ -517,7 +527,12 @@ function styles(span) {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
-    .of-meta { display: flex; align-items: center; gap: 0.25em; min-width: 0; }
+    .of-meta {
+      display: flex; align-items: center; gap: 0.2em;
+      min-width: 0; flex: 0 0 auto;
+      /* Keep the clock clear of the corner marks below. */
+      padding-right: 2.7em;
+    }
     .of-time {
       font-size: calc(var(--fs-caption) * 0.85); font-weight: var(--fw-bold);
       color: var(--text-secondary); font-feature-settings: "tnum";
@@ -528,11 +543,22 @@ function styles(span) {
       color: var(--text-muted);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    /* Owner marks, bottom-right. Absolute, so they take nothing from the
+       title's width and nothing from the layout of the lines above them. */
+    .of-marks {
+      position: absolute;
+      right: 2px; bottom: 1px;
+      display: flex; gap: 2px;
+      pointer-events: none;
+    }
+
+    /* Small enough that a one-hour block still has room for its title on the
+       line above — that is the tightest tile the mark has to share. */
     .of-mark {
       display: inline-grid; place-items: center;
-      width: 1.05em; height: 1.05em; flex: 0 0 auto;
+      width: 1.15em; height: 1.15em; flex: 0 0 auto;
       border-radius: var(--radius-0, 2px);
-      font-size: calc(var(--fs-caption) * 0.7); font-weight: var(--fw-black);
+      font-size: calc(var(--fs-caption) * 0.62); font-weight: var(--fw-black);
       color: var(--on-accent);
     }
 
@@ -618,8 +644,22 @@ function styles(span) {
        of clipped letter-tops reads worse than a clean bar). Only a block with
        room for two lines, in a column wide enough to be worth wrapping into,
        gets a wrapped title. */
+    /* What goes first as a block shrinks: the time (its position on the axis
+       already says roughly when), then the owner marks, then the title. */
     @container ofev (max-height: 34px) {
       .of-meta { display: none; }
+    }
+    /* Down to here the title sits on the tile's top line and the marks sit
+       under it, so they never meet and the title keeps its full width. Below
+       it there is only room for one line, and the marks would land on the
+       title's last characters — so that is where they get their own room, and
+       only on tiles that actually have a mark to place. */
+    @container ofev (max-height: 26px) {
+      .of-ev.has-marks .of-name { padding-right: 2.4em; }
+    }
+    @container ofev (max-height: 20px) {
+      .of-marks { display: none; }
+      .of-ev.has-marks .of-name { padding-right: 0; }
     }
     @container ofev (max-height: 17px) {
       .of-name { display: none; }

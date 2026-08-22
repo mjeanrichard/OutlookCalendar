@@ -169,6 +169,10 @@ def test_it_renders_before_anyone_has_configured_a_family(
 
     data = _cell_data(client.get("/_test/render?plugin=outlook_family&size=lg").get_data(True))
 
+    # Flattened across days on purpose: these smoke tests run against the real
+    # clock, so an event seeded two hours out lands on tomorrow's column when
+    # the suite happens to run late in the evening.
+    events = [e for day in data["days"] for e in day["events"]]
     assert data["members"] == []
-    assert data["days"][0]["events"][0]["members"] == []
-    assert data["days"][0]["events"][0]["title"] == "Zahnarzt"
+    assert [e["title"] for e in events] == ["Zahnarzt"]
+    assert events[0]["members"] == []

@@ -38,7 +38,8 @@ routine that day, and each member keeps the same slot every day, so the gutter r
 pattern of who is tied up. A day with no routine has no gutter at all.
 
 **Appointment blocks** fill the rest of the column. Only non-routine events compete for that width;
-concurrent ones split it by greedy packing.
+concurrent ones split it by greedy packing, per overlapping cluster — a lone afternoon appointment
+stays full width even when the morning is a three-way collision.
 
 **Edges.** An event wholly outside the hour window becomes a counted chevron (`▲2`, `▼1`) at the
 column's edge, tinted with its owner's colour. An event that straddles an edge is drawn clamped
@@ -255,6 +256,13 @@ has members.
 The host loads `server.py` by file path as `_tesserae_plugins.<id>.server` and never creates the
 parent packages, so `from . import family` has nothing to resolve against. `server.py`'s
 `_sibling()` is the only supported route to a second module.
+
+**D34 — Packing runs in hours, and the split is scoped to the cluster.**
+`packColumns` takes and compares `top`/`bottom` in hours; `pctSpan` runs afterwards, per block.
+Feeding it percentages on one edge and hours on the other made every column look free, so
+overlapping events stacked at full width instead of sitting side by side — the bug this decision
+exists to prevent. Column count is then per run of events that actually touch, not per day, so one
+busy morning does not narrow the rest of the column.
 
 ## Known limits
 

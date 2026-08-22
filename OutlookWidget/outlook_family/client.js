@@ -243,12 +243,35 @@ export function clipClasses(top, bottom, hours) {
 // Greedy interval packing: concurrent events split the column between them.
 // Routine is packed separately in the gutter, which is what usually keeps
 // this down to a single full-width block on an ordinary weekday.
+//
+// `top`/`bottom` are hours, and they have to stay hours all the way through —
+// packing against a percentage on one edge and an hour on the other silently
+// finds every column free and stacks the day into one pile. The caller
+// converts to percent *after* placement, per block.
+//
+// The split is per cluster of events that actually touch, not per day: a lone
+// 16:00 appointment keeps the full width even when the morning is a three-way
+// collision. Each placed item therefore carries its own `columns`.
 export function packColumns(items) {
-  const ends = [];
-  const placed = items
+  const placed = [];
+  let cluster = [];
+  let ends = [];
+  let clusterEnd = -Infinity;
+
+  const flush = () => {
+    const columns = Math.max(1, ends.length);
+    for (const item of cluster) placed.push({ ...item, columns });
+    cluster = [];
+    ends = [];
+  };
+
+  items
     .slice()
     .sort((a, b) => a.top - b.top || b.bottom - a.bottom)
-    .map((item) => {
+    .forEach((item) => {
+      // Sorted by start, so once a start clears every end seen so far,
+      // nothing later can reach back into the cluster we were building.
+      if (item.top >= clusterEnd) flush();
       let column = ends.findIndex((end) => end <= item.top);
       if (column === -1) {
         column = ends.length;
@@ -256,9 +279,11 @@ export function packColumns(items) {
       } else {
         ends[column] = item.bottom;
       }
-      return { ...item, column };
+      cluster.push({ ...item, column });
+      clusterEnd = Math.max(clusterEnd, item.bottom);
     });
-  return { placed, columns: Math.max(1, ends.length) };
+  flush();
+  return placed;
 }
 
 /* ---------- rendering ---------- */
@@ -333,33 +358,30 @@ function laneHtml(day, opts) {
     const to = indices.length ? Math.max(...indices) : 0;
     const { top, height } = pctSpan(item.top, item.bottom, hours);
     return `
-      <div class="of-bar ${patternClass(owners)} ${clipClasses(item.hourTop, item.hourBottom, hours)}"
+      <div class="of-bar ${patternClass(owners)} ${clipClasses(item.top, item.bottom, hours)}"
            style="${paint(owners[0])};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
                   left:${from * GUTTER_PX}px;width:${(to - from + 1) * GUTTER_PX - 1}px">
         <span class="of-bar-name">${esc(item.event.title || item.event.summary || "")}</span>
       </div>`;
   }).join("");
 
-  // pctSpan overwrites `top` with a percentage, so keep the event's real hours
-  // under their own names — the clip test needs hours, not percentages.
-  const { placed, columns } = packColumns(appointments.map((item) => ({
-    ...item,
-    hourTop: item.top,
-    hourBottom: item.bottom,
-    ...pctSpan(item.top, item.bottom, hours),
-  })));
+  // Packed in hours; pctSpan runs per block below. Handing pctSpan's output
+  // to the packer is what broke this before — see packColumns.
+  const placed = packColumns(appointments);
 
   const blocks = placed.map((item) => {
     const event = item.event;
     const owners = ownersOf(event, members);
+    const columns = item.columns;
     const width = 100 / columns;
     const left = item.column * width;
+    const { top, height } = pctSpan(item.top, item.bottom, hours);
     // Everything is emitted; the CSS drops the meta line, then the title, as
     // the block gets shorter. Two-line titles are also a CSS decision, but
     // only where a column is wide enough to be worth wrapping into.
     return `
       <div class="of-ev ${patternClass(owners)} ${columns < 3 ? "can-wrap" : ""} ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""} ${clipClasses(item.top, item.bottom, hours)}"
-           style="${paint(owners[0])};top:${item.top.toFixed(2)}%;height:${item.height.toFixed(2)}%;
+           style="${paint(owners[0])};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
                   left:calc(${left}% + 1px);width:calc(${width}% - 2px)">
         ${stripeHtml(owners)}
         <span class="of-name">${esc(event.title || event.summary || "")}</span>

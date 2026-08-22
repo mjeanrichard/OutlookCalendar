@@ -152,6 +152,18 @@ Shipping is then: merge a conventional commit, copy the printed `release` block 
 against [`dmellok/tesserae-widgets`](https://github.com/dmellok/tesserae-widgets). Only the first
 submission is bigger — it needs `screenshots/outlook/lg.png` and the full entry.
 
+**Two distribution paths, one release.** `catalog/widgets.json` is the source of a private one-entry
+index; each release republishes it to the **`catalog` branch**, and production (the Home Assistant
+add-on, which has no filesystem you can reach) points `marketplace_index_url` at
+`raw.githubusercontent.com/.../OutlookCalendar/catalog/widgets.json` and installs through Browse.
+Same release asset, same install path, no waiting on review — see `catalog/README.md`. The official
+catalog PR is the same entry pasted somewhere else.
+
+The separate branch is not a preference: `github-actions[bot]` cannot push to a protected `main` on
+a personal repo (classic `bypass_pull_request_allowances` and ruleset `Integration` bypass actors
+both 422 there). It also means the publish cannot re-trigger the pipeline, since nothing triggers on
+that branch.
+
 Two constraints the workflow asserts, because both are easy to re-break:
 
 - **The tarball's direct children must be the plugin folders.** `_detect_layout` in the host's

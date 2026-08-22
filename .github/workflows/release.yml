@@ -260,6 +260,76 @@ jobs:
           gh release create "v$VERSION" "${{ steps.build.outputs.tarball }}" \
             --title "v$VERSION" --notes-file NOTES.md
 
+      - name: Publish the private catalog index
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          RELEASE_SHA256: ${{ steps.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+
+          # The entry is authored on main (catalog/widgets.json); only the
+          # release block is machine-written. The published copy goes to the
+          # `catalog` branch, which the branch protection does not cover —
+          # github-actions[bot] cannot push to a protected main on a personal
+          # repo (neither classic bypass allowances nor ruleset Integration
+          # bypass actors are accepted there).
+          python3 - <<'PY'
+          import json, os, pathlib
+
+          version = os.environ["VERSION"]
+          index = json.loads(pathlib.Path("catalog/widgets.json").read_text(encoding="utf-8"))
+
+          entries = index["widgets"]
+          if len(entries) != 1:
+              raise SystemExit(f"::error::expected exactly 1 catalog entry, found {len(entries)}")
+
+          entries[0]["release"] = {
+              "version": version,
+              "tarball_url": (
+                  f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+                  f"/releases/download/v{version}/{os.environ['BUNDLE_NAME']}-{version}.tar.gz"
+              ),
+              "sha256": os.environ["RELEASE_SHA256"],
+          }
+
+          # Declared folders must match what the tarball actually shipped.
+          declared = entries[0].get("folders")
+          shipped = os.environ["BUNDLE_FOLDERS"].split()
+          if declared is not None and sorted(declared) != sorted(shipped):
+              raise SystemExit(
+                  f"::error::catalog `folders` {declared} != BUNDLE_FOLDERS {shipped}"
+              )
+
+          out = pathlib.Path("publish")
+          out.mkdir(exist_ok=True)
+          (out / "widgets.json").write_text(
+              json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(entries[0]["release"], indent=2))
+          PY
+
+          # Screenshots are authored on main too; the Browse card resolves them
+          # relative to the index URL, so they must sit beside it once published.
+          if [ -d catalog/screenshots ]; then
+            cp -r catalog/screenshots publish/screenshots
+          fi
+
+          # A generated index has no history worth keeping — main holds that.
+          # Single-commit orphan branch, replaced each release.
+          cd publish
+          rm -rf .git
+          git init -q -b catalog
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          # [skip ci] is belt-and-braces: pushes to `catalog` do not match any
+          # workflow trigger, so nothing would re-run regardless.
+          git commit -q -m "catalog: v$VERSION [skip ci]"
+          git push -q --force \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            catalog
+
       - name: Print the catalog entry block
         shell: bash
         run: |
@@ -281,9 +351,14 @@ jobs:
           {
             echo "## Catalog \`release\` block"
             echo
-            echo "Paste into the \`outlook\` entry in \`widgets.json\` on"
-            echo "[dmellok/tesserae-widgets](https://github.com/dmellok/tesserae-widgets)."
-            echo "\`.github/catalog-entry.json\` in this repo holds the rest of the entry."
+            if [ "$DRY_RUN" != "true" ]; then
+              echo "Already published to the private index on the \`catalog\` branch —"
+              echo "installations pointed at it will offer this as an update."
+              echo
+            fi
+            echo "For the public catalog, paste into the \`outlook\` entry in \`widgets.json\` on"
+            echo "[dmellok/tesserae-widgets](https://github.com/dmellok/tesserae-widgets);"
+            echo "\`catalog/widgets.json\` in this repo holds the rest of the entry."
             echo
             echo '```json'
             echo "$block"

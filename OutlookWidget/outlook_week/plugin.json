@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Outlook, Week Ahead",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "kind": "widget",
   "description": "The next few days of your Outlook calendar, grouped by day. Reads the account signed in on the Outlook Core page; shows location, tentative/accepted status and Outlook categories. Cancelled and declined events are left out.",
   "icon": "ph-calendar-dots",

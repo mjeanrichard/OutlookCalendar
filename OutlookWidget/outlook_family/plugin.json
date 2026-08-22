@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Outlook, Family Week",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "kind": "widget",
   "description": "The next few days as a family timetable: one column per day, every appointment tinted, patterned and initialled with whoever it belongs to. Who owns what is configured once on the Outlook Core page, from Outlook categories, title prefixes like 'L: Klavier', a word in the title, or the calendar an event came from. Recurring commitments such as school and office hours move to a narrow gutter so appointment titles keep the width.",
   "icon": "ph-users-three",

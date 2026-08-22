@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Outlook Core",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "kind": "data",
   "description": "Microsoft Graph sign-in and calendar registry for the outlook_* widget family. Sign in once with the device-code flow on this plugin's admin page; the outlook_* widgets then read your calendars through it. One Graph call per calendar, cached 10 minutes.",
   "icon": "ph-calendar-dots",

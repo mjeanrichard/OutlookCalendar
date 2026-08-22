@@ -22,6 +22,9 @@ from _devsupport import TESSERAE_REPO, WIDGET_ROOT
 
 PLUGIN_IDS = ("outlook_core", "outlook_family", "outlook_week")
 
+# What plugin.json carries in git. CI overwrites it at release time.
+RELEASE_SENTINEL_VERSION = "0.0.0-dev"
+
 
 def _manifest(plugin_id: str) -> dict[str, Any]:
     return json.loads((WIDGET_ROOT / plugin_id / "plugin.json").read_text(encoding="utf-8"))
@@ -153,11 +156,17 @@ def test_no_stray_plugin_folders(app: Flask) -> None:
     assert candidates == set(PLUGIN_IDS)
 
 
-def test_versions_are_semver_ish() -> None:
+def test_versions_carry_the_release_sentinel() -> None:
+    """The committed version is a sentinel, never a real one.
+
+    ``.github/workflows/release.yml`` derives the version from the commit log
+    and stamps it into the staged copy of each manifest, so a number in git is
+    always stale. The sentinel still has to satisfy the host schema's version
+    pattern, which allows a prerelease suffix — see
+    ``test_manifest_matches_the_host_schema``.
+    """
     for plugin_id in PLUGIN_IDS:
-        parts = _manifest(plugin_id)["version"].split(".")
-        assert len(parts) == 3
-        assert all(part.isdigit() for part in parts)
+        assert _manifest(plugin_id)["version"] == RELEASE_SENTINEL_VERSION
 
 
 def test_repo_paths_are_relative_to_this_file() -> None:

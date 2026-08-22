@@ -13,6 +13,8 @@ Graph instead, so the panel shows the private calendar as it actually is.
 | `outlook_week/` | `widget` | The next N days grouped by day. |
 | `outlook_family/` | `widget` | The family timetable: a column per day, a colour and pattern per person. |
 
+[`DESIGN.md`](DESIGN.md) records how the family view works and the decisions behind it.
+
 Everything else at the repo root is development scaffolding: `devserver.py`,
 `conftest.py`, `_devsupport.py`, `_tests/`, `_docs/`. The underscore prefixes are
 load-bearing — Tesserae treats every other folder here as a plugin.

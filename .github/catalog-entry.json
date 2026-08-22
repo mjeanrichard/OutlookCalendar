@@ -1,0 +1,27 @@
+{
+  "_comment": "Draft entry for widgets.json in dmellok/tesserae-widgets. Not read by any tooling; it exists so the first catalog PR is a copy-paste. Before opening the PR: drop this _comment, add \"source\" (this repo's GitHub URL) and author.github, and replace the placeholder `release` block with the one the Release workflow prints in its run summary.",
+  "id": "outlook",
+  "name": "Outlook family calendar",
+  "description": "Your Outlook calendar as a family timetable: a column per day, every appointment tinted, patterned and initialled with whoever it belongs to. Signs in to Microsoft Graph directly, so the panel shows the private calendar live rather than a cached iCal feed.",
+  "icon": "ph-users-three",
+  "author": {
+    "name": "Meinrad Jean-Richard"
+  },
+  "tags": [
+    "calendar"
+  ],
+  "kind": "widget",
+  "tesserae_compat": "1.x",
+  "screenshot_sizes": [
+    "lg"
+  ],
+  "folders": [
+    "outlook_core",
+    "outlook_family"
+  ],
+  "release": {
+    "version": "0.0.0",
+    "tarball_url": "https://example.invalid/replace-me.tar.gz",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

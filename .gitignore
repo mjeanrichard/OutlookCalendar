@@ -1,0 +1,4 @@
+# Build output from .github/workflows/release.yml (also created locally when
+# testing the packaging steps by hand).
+dist/
+plugin.schema.json

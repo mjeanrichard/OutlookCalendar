@@ -697,14 +697,10 @@ function styles(span) {
        strike in the on-accent colour to stay visible. */
     .of-key-chip { --of-stroke: color-mix(in oklab, var(--on-accent) 45%, transparent); }
 
-    /* How much a block says, by how tall it actually is. The order things
-       go in is the order we're willing to lose them: the time first (its
-       position on the axis already says roughly when), then the title (a row
-       of clipped letter-tops reads worse than a clean bar). Only a block with
-       room for two lines, in a column wide enough to be worth wrapping into,
-       gets a wrapped title. */
-    /* What goes first as a block shrinks: the time (its position on the axis
-       already says roughly when), then the owner marks, then the title. */
+    /* How much a block says, by how tall it actually is. What goes first as it
+       shrinks is what we are most willing to lose: the time (its position on
+       the axis already says roughly when), then the owner marks, then the
+       title — a row of clipped letter-tops reads worse than a clean bar. */
     @container ofev (max-height: 34px) {
       .of-meta { display: none; }
     }

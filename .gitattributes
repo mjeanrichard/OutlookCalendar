@@ -1,0 +1,3 @@
+# Workflow shell scripts run on Linux runners; CRLF would break every `run:` block.
+.github/**/*.yml text eol=lf
+.github/**/*.yaml text eol=lf

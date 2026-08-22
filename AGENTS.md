@@ -15,6 +15,10 @@ Repo root is `Calendar/` (this file's directory). The plugins live under `Outloo
 | `OutlookWidget/outlook_week/` | `widget` | Next N days, grouped by day |
 | `OutlookWidget/outlook_family/` | `widget` | The family timetable: a column per day, colour/pattern per person |
 
+`OutlookWidget/DESIGN.md` is the design record for the family widget: what the panel does now, and
+the numbered decisions (D1-D33) behind it. Read it before changing `outlook_family/client.js` or the
+family rules — most of what looks arbitrary in there is load-bearing, and the reason is written down.
+
 **The folder name is the plugin id** — there is no `id` field in `plugin.json`. Everything else
 under `OutlookWidget/` is scaffolding: `devserver.py`, `conftest.py`, `_devsupport.py`, `_tests/`,
 `_docs/` (a copy of the Tesserae docs; `_docs/widgets.md` is the authoritative widget contract),
@@ -125,9 +129,36 @@ Authoritative: `_docs/widgets.md` and `_docs/widget-design-system.md`. Schema:
 - Don't add a `variant` cell option, and don't name one `label` (the host overwrites it with the
   app-level place name).
 
-## Publishing (later)
+## Publishing
 
-Community catalog, as a bundle: `folders: ["outlook_core", "outlook_week"]`. Tag a release, sha256
-the GitHub tarball, PR the entry to `dmellok/tesserae-widgets`. The tarball must expose the plugin
-folders as direct children — this repo's root is `Calendar/` with the plugins two levels deeper, so
-the packaging step needs checking before submission.
+Community catalog, as a bundle: `id: "outlook"`, `folders: ["outlook_core", "outlook_family"]`.
+`outlook_week` is deliberately out until its `client.js` is a real render rather than the
+placeholder debug list; adding it is one word in `BUNDLE_FOLDERS` plus the catalog entry.
+
+**Releases are automatic.** `.github/workflows/release.yml` runs on every push to `main`, derives
+the version from the commit log and publishes a tagged GitHub release with the bundle tarball
+attached, then prints the ready-to-paste `widgets.json` block (version + URL + sha256) into the run
+summary. Nobody edits a version number: `plugin.json` carries the sentinel `0.0.0-dev` in git and CI
+stamps the real value into the staged copy.
+
+| Commit | Result |
+| --- | --- |
+| `feat!:` or a `BREAKING CHANGE:` footer | major |
+| `feat:` | minor |
+| `fix:` / `perf:` | patch |
+| anything else (`docs:`, `chore:`, …) | no release at all |
+
+Shipping is then: merge a conventional commit, copy the printed `release` block into a one-hunk PR
+against [`dmellok/tesserae-widgets`](https://github.com/dmellok/tesserae-widgets). Only the first
+submission is bigger — it needs `screenshots/outlook/lg.png` and the full entry.
+
+Two constraints the workflow asserts, because both are easy to re-break:
+
+- **The tarball's direct children must be the plugin folders.** `_detect_layout` in the host's
+  `app/marketplace.py` unwraps a single-entry root envelope, then requires every remaining child to
+  hold a `plugin.json`. GitHub's own `archive/refs/tags/*.tar.gz` therefore *cannot* work here —
+  this repo's root has `AGENTS.md` beside `OutlookWidget/` and the plugins sit two levels deeper.
+  The release asset is built from a staging dir for exactly this reason (and is byte-reproducible,
+  so the pinned sha256 can be re-derived from the tag).
+- **The entry's `folders` must match those children exactly.** Catalog CI and the installer both
+  check it.

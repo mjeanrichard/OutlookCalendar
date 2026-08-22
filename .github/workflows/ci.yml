@@ -1,0 +1,42 @@
+name: CI
+
+# Runs the same three commands AGENTS.md documents for local work, against a
+# fresh clone of the host.
+#
+# Deliberately NOT a gate on release.yml: upstream tesserae moving should not be
+# able to block a release, whereas a malformed manifest should — and release.yml
+# validates manifests itself.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      TESSERAE_REPO: ${{ github.workspace }}/tesserae
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # matches the clone's venv
+
+      - name: Clone the Tesserae host
+        run: git clone --depth 1 https://github.com/dmellok/tesserae.git "$TESSERAE_REPO"
+
+      - name: Install the host and its dev extras
+        run: pip install -e "$TESSERAE_REPO[dev]"
+
+      - name: Lint
+        working-directory: OutlookWidget
+        run: ruff check . && ruff format --check .
+
+      - name: Test
+        working-directory: OutlookWidget
+        # conftest.py routes every plugin through _devsupport, which reads
+        # TESSERAE_REPO; its fake_http fixture raises on any unrouted host, so
+        # the suite never touches the network.
+        run: python -m pytest . -q

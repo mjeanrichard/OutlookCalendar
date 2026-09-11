@@ -125,8 +125,21 @@ per-dashboard to re-enter.
 The letter does double duty: it is drawn on events two people share, and it is
 what a title prefix is matched against, so everyone needs their own. The
 pattern is what keeps people apart on a black-and-white panel, where every
-accent colour collapses to the same black. Accent slots run 2–6; slot 1 is
-reserved for the "now" line and today's date.
+accent colour collapses to the same black. Colour slots run 2–9 — yellow,
+green, blue, red, orange, purple, olive, teal — and are drawn as fixed 2×2
+dither tiles of the panel's own inks rather than theme accents (see
+`DESIGN.md` D36/D37); slot 1 is reserved for the "now" line and today's date.
+
+**Panel calibration.** The family widget only draws pixels a Spectra 6 panel
+can paint natively, so the device must not be on a *measured* palette or the
+quantiser will speckle even pure inks. On the device's **Calibration** tab
+pick "Built-in default (no profile)", or better, apply a profile whose
+palette is the pure primaries (`#000000 #FFFFFF #FFFF00 #FF0000 #0000FF
+#00FF00`, dither Floyd–Steinberg). The second form also overrides a
+`calibrated: true` flag left in the device settings by Tesserae versions
+before 0.68, which the UI no longer shows but the packer still honours.
+`tools/patch_test.py` at the repo root renders a test card that arrives
+byte-exact under those settings and shows speckle under any other.
 
 **Rules** decide who owns an event. Every rule is checked against every event
 and *all* matches apply, which is how one "Elternabend" can belong to two

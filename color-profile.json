@@ -1,0 +1,32 @@
+{
+  "slug": "nominal-pure",
+  "name": "Nominal (pure primaries)",
+  "family": "spectra6",
+  "notes": "Ideal sRGB inks; native-colour content passes through byte-exact.",
+  "palette": {
+    "black": "#000000",
+    "white": "#FFFFFF",
+    "yellow": "#FFFF00",
+    "red": "#FF0000",
+    "blue": "#0000FF",
+    "green": "#00FF00"
+  },
+  "tone": {
+    "exposure": 0,
+    "contrast": 1.0,
+    "saturation": 1.0,
+    "s_curve": 0,
+    "lab_compress_min": 0,
+    "lab_compress_max": 100
+  },
+  "dither": {
+    "algorithm": "floyd-steinberg",
+    "serpentine": false,
+    "color_match": "rgb",
+    "diffusion_strength": 100
+  },
+  "edges": {
+    "preserve_line_art": false,
+    "smoothing_radius": 0
+  }
+}

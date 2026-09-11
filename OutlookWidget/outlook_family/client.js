@@ -81,7 +81,7 @@ export default function render(shadow, ctx) {
     <style>${styles(span)}</style>
     <div class="w size-${size}" data-widget="outlook_family">
       <div class="w-title">
-        <i class="ph-bold ph-users-three" style="color:var(--accent-4)"></i>
+        <i class="ph-bold ph-users-three" style="color:#000"></i>
         <h3>Familie</h3>
         <span class="w-title-meta">${esc(rangeLabel(days))}${data.stale ? " · cached" : ""}</span>
       </div>
@@ -102,28 +102,60 @@ export default function render(shadow, ctx) {
 
 /* ---------- members ---------- */
 
-// A member's colour is an accent *slot*, never a hex: the active theme owns
-// the hue, so the widget keeps working when the panel theme changes. Slot 1 is
-// the design system's alerts/"now" role and is never assigned to a person.
+// The panel's six inks. Everything the widget paints is one of these, pure,
+// or a 2x2 tile of them (D36/D37): the quantiser leaves a native pixel alone
+// and dithers anything else.
+const INK = { K: "#000000", W: "#ffffff", Y: "#ffff00", R: "#ff0000", B: "#0000ff", G: "#00ff00" };
+
+// A 2x2 pixel tile as an SVG background. crispEdges + a 2px background-size
+// keeps every pixel on its ink; the panel then paints the tile verbatim.
+function tile(tl, tr, bl, br) {
+  const rect = (x, y, c) => `<rect x="${x}" y="${y}" width="1" height="1" fill="${INK[c]}"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2" shape-rendering="crispEdges">` +
+    `${rect(0, 0, tl)}${rect(1, 0, tr)}${rect(0, 1, bl)}${rect(1, 1, br)}</svg>`;
+  // Percent-encoded, so the value carries no quote of either kind: it is
+  // written into an inline style attribute.
+  return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
+}
+
+// Member slots, picked on the panel from the patch test (tools/patch_test.py):
+// four inks at 50% over white and four two-ink mixes. `line` is the solid ink
+// for the stripe, marks and pattern stroke; `text` is what stays legible on
+// the fill. Slot 1 is the now-line / today chip and is never a person.
+const SLOTS = {
+  2: { fill: tile("Y", "W", "W", "Y"), line: "Y", text: "K" }, // yellow 50%
+  3: { fill: tile("G", "W", "W", "G"), line: "G", text: "K" }, // green 50%
+  4: { fill: tile("B", "W", "W", "B"), line: "B", text: "K" }, // blue 50%
+  5: { fill: tile("R", "W", "W", "R"), line: "R", text: "K" }, // red 50%
+  6: { fill: tile("R", "Y", "Y", "R"), line: "R", text: "K" }, // orange, R+Y 50
+  7: { fill: tile("R", "B", "B", "R"), line: "B", text: "W" }, // purple, R+B 50
+  8: { fill: tile("Y", "K", "K", "Y"), line: "K", text: "W" }, // olive, Y+K 50
+  9: { fill: tile("G", "G", "B", "G"), line: "G", text: "W" }, // teal, B+G 75
+};
+
 function accent(member) {
-  const slot = Math.min(6, Math.max(2, Number(member?.accent) || 4));
+  const slot = Math.min(9, Math.max(2, Number(member?.accent) || 4));
+  const s = SLOTS[slot];
   return {
-    line: `var(--accent-${slot})`,
-    fill: `var(--accent-${slot}-soft)`,
+    line: INK[s.line],
+    fill: s.fill,
+    text: INK[s.text],
+    // The letter on a chip or mark sits on the solid line ink: black on
+    // yellow, white on everything else.
+    ink: s.line === "Y" ? INK.K : INK.W,
   };
 }
 
 // Unassigned events are drawn, never hidden: an event vanishing because a
-// rule stopped firing is the failure nobody would notice.
-const UNOWNED = { line: "var(--text-muted)", fill: "var(--surface-sunken)" };
+// rule stopped firing is the failure nobody would notice. Plain white, black
+// stripe.
+const UNOWNED = { line: INK.K, fill: "none", text: INK.K, ink: INK.W };
 
 function paint(member) {
-  const { line, fill } = member ? accent(member) : UNOWNED;
-  // --of-line is the pattern stroke. There's no token for "accent at low
-  // alpha", so this is the one place color-mix earns its keep; the fill
-  // itself uses the accent's own -soft companion.
-  return `--of-line:${line};--of-fill:${fill};` +
-    `--of-stroke:color-mix(in oklab, ${line} 34%, transparent)`;
+  const { line, fill, text } = member ? accent(member) : UNOWNED;
+  // The pattern stroke is the line ink itself: a colour-mixed stroke would
+  // be a second dither field on top of the fill.
+  return `--of-line:${line};--of-fill:${fill};--of-stroke:${line};--of-text:${text}`;
 }
 
 function ownersOf(event, members) {
@@ -156,7 +188,7 @@ function stripeHtml(owners) {
 function initialsHtml(owners) {
   if (!owners.length) return "";
   return owners
-    .map((m) => `<span class="of-mark" style="background:${accent(m).line}">${esc(m.letter || "·")}</span>`)
+    .map((m) => `<span class="of-mark" style="background:${accent(m).line};color:${accent(m).ink}">${esc(m.letter || "·")}</span>`)
     .join("");
 }
 
@@ -173,7 +205,7 @@ function legendHtml(roster) {
   const chips = roster
     .map((m) => `
       <span class="of-key">
-        <span class="of-key-chip ${patternClass([m])}" style="${paint(m)};background-color:${accent(m).line}">${esc(m.letter || "·")}</span>
+        <span class="of-key-chip ${patternClass([m])}" style="${paint(m)};color:${accent(m).text}">${esc(m.letter || "·")}</span>
         <span class="of-key-name">${esc(m.name || "")}</span>
       </span>`)
     .join("");
@@ -463,6 +495,25 @@ function esc(value) {
 
 function styles(span) {
   return `
+    /* Plain white, not the theme's --surface. Every theme surface is an
+       off-white tint, and on a Spectra panel a tint is a field of dithered
+       dots behind the whole timetable. The edge chips paint the same white
+       so they still mask the rule they sit on. */
+    .w[data-widget="outlook_family"] {
+      background: #fff; --bg: #fff;
+      /* And every text role collapses to solid black: a grey label is a
+         dithered label. Hierarchy comes from size and weight alone. */
+      color: #000;
+      --text-primary: #000; --text-secondary: #000; --text-muted: #000;
+      /* Spectra 6 has six inks, and the quantiser leaves a pixel alone only
+         when it already sits on one of them. Members are painted from the
+         SLOTS table above (pure inks and 2x2 tiles of them), never from a
+         theme accent. Slot 1, the now-line and today chip, is black. */
+      --accent-1: #000000; --accent-1-soft: #ffffff;
+      --on-accent: #ffffff;
+      --surface-sunken: #ffffff;
+    }
+
     /* Our own named container for the cell-width rules. The blocks below are
        size containers too, and an *unnamed* @container query would resolve
        against the nearest one of those — a 130px block — instead of the cell,
@@ -491,8 +542,10 @@ function styles(span) {
       width: 1.35em; height: 1.35em;
       display: inline-grid; place-items: center;
       font-size: var(--fs-caption); font-weight: var(--fw-black);
-      color: var(--on-accent);
+      background-color: #fff;
+      background-image: var(--of-fill); background-size: 2px 2px;
       border-radius: var(--radius-0, 2px);
+      box-shadow: inset 0 0 0 1px #000;
     }
     .of-key-name {
       font-size: var(--fs-caption); font-weight: var(--fw-bold);
@@ -519,29 +572,35 @@ function styles(span) {
       border-radius: 999px; font-weight: var(--fw-black);
     }
 
+    /* Solid dark rules between the days. A faint --surface-sunken line
+       dithers to nothing on the panel, and without it seven columns of
+       tiles read as one field. The weekend carries no tint for the same
+       reason: a 3% wash is dither, not a signal. */
     .of-lane {
       position: relative; display: flex; min-width: 0;
-      border-left: 1px solid var(--surface-sunken);
+      border-left: 1px solid #000;
     }
-    .of-lane:last-child { border-right: 1px solid var(--surface-sunken); }
-    /* Same tint calendar_week uses: enough to separate the weekend, not so
-       much that it reads as a slab laid over two columns. */
-    .of-lane.is-weekend { background: color-mix(in oklab, var(--text-primary) 3%, transparent); }
+    .of-lane:last-child { border-right: 1px solid #000; }
     .of-gutter {
       position: relative; flex: 0 0 auto;
-      border-right: 1px solid var(--surface-sunken);
+      border-right: 1px solid #000;
     }
     .of-main {
       position: relative; flex: 1 1 auto; min-width: 0;
-      /* One faint rule every two hours so the eye can sweep a time across
-         all the columns. Percentages resolve against the lane's height. */
-      background-image: repeating-linear-gradient(
-        to bottom,
-        transparent 0,
-        transparent calc((2 * 100% / ${span}) - 1px),
-        var(--surface-sunken) calc((2 * 100% / ${span}) - 1px),
-        var(--surface-sunken) calc(2 * 100% / ${span})
-      );
+      /* One rule every two hours so the eye can sweep a time across all
+         the columns. Percentages resolve against the lane's height. There
+         is no faint ink on this panel, so "faint" is a 1px black line cut
+         into dashes: the top layer is white stripes that only show where
+         they cross the black rule below. */
+      background-image:
+        repeating-linear-gradient(to right, transparent 0 2px, #fff 2px 5px),
+        repeating-linear-gradient(
+          to bottom,
+          transparent 0,
+          transparent calc((2 * 100% / ${span}) - 1px),
+          #000 calc((2 * 100% / ${span}) - 1px),
+          #000 calc(2 * 100% / ${span})
+        );
     }
 
     /* Appointments. The stripe is a child, so it can be split per owner.
@@ -549,18 +608,23 @@ function styles(span) {
        further down drop text by the block's real pixel height. */
     .of-ev {
       position: absolute; overflow: hidden;
-      background-color: var(--of-fill);
-      padding: 1px var(--space-1) 1px calc(var(--space-1) + 4px);
+      background-color: #fff;
+      background-image: var(--of-fill); background-size: 2px 2px;
+      color: var(--of-text, #000);
+      /* White tiles need an edge to read as tiles. An outline, not a
+         border, so the size container's height is unchanged. */
+      outline: 1px solid #000; outline-offset: -1px;
+      padding: 1px var(--space-1) 1px calc(var(--space-1) + 5px);
       line-height: 1.1;
       display: flex; flex-direction: column; gap: 0;
       container-type: size;
       container-name: ofev;
     }
-    .of-ev.is-routine { opacity: 0.75; }
-    .of-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+    /* No opacity on routine blocks: 75% black text is grey, and grey dithers. */
+    .of-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; }
     .of-name {
       font-size: var(--fs-caption); font-weight: var(--fw-black);
-      color: var(--text-primary);
+      color: inherit;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
@@ -572,12 +636,12 @@ function styles(span) {
     }
     .of-time {
       font-size: calc(var(--fs-caption) * 0.85); font-weight: var(--fw-bold);
-      color: var(--text-secondary); font-feature-settings: "tnum";
+      color: inherit; font-feature-settings: "tnum";
     }
     .of-loc {
       display: inline-flex; align-items: center; gap: 0.2em;
       font-size: calc(var(--fs-caption) * 0.8); font-weight: var(--fw-bold);
-      color: var(--text-muted);
+      color: inherit;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     /* "There is more of this than you can see." A block that starts before the
@@ -641,14 +705,18 @@ function styles(span) {
       border-radius: var(--radius-0, 2px);
       font-size: calc(var(--fs-caption) * 0.62); font-weight: var(--fw-black);
       color: var(--on-accent);
+      box-shadow: inset 0 0 0 1px #000;
     }
 
     /* Routine bars: vertical labels, so a long word like "Fussballtraining"
        costs height (which the bar has) instead of width (which it doesn't). */
     .of-bar {
       position: absolute; overflow: hidden;
-      background-color: var(--of-fill);
-      border-left: var(--stroke-1, 2px) solid var(--of-line);
+      background-color: #fff;
+      background-image: var(--of-fill); background-size: 2px 2px;
+      color: var(--of-text, #000);
+      outline: 1px solid #000; outline-offset: -1px;
+      border-left: 3px solid var(--of-line);
       display: flex; justify-content: center; padding-top: 2px;
       container-type: size;
       container-name: ofbar;
@@ -657,7 +725,7 @@ function styles(span) {
       writing-mode: vertical-rl; text-orientation: mixed;
       font-size: calc(var(--fs-caption) * 0.8); font-weight: var(--fw-black);
       letter-spacing: var(--ls-label);
-      color: var(--text-secondary);
+      color: inherit;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       max-height: 100%;
     }
@@ -667,13 +735,16 @@ function styles(span) {
     .of-band {
       position: relative; overflow: hidden;
       display: flex; align-items: center; gap: 0.25em;
-      background-color: var(--of-fill);
-      padding: 1px var(--space-2) 1px calc(var(--space-2) + 4px);
+      background-color: #fff;
+      background-image: var(--of-fill); background-size: 2px 2px;
+      color: var(--of-text, #000);
+      outline: 1px solid #000; outline-offset: -1px;
+      padding: 1px var(--space-2) 1px calc(var(--space-2) + 5px);
       min-width: 0;
     }
     .of-band-name {
       font-size: var(--fs-caption); font-weight: var(--fw-black);
-      color: var(--text-primary);
+      color: inherit;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
@@ -700,24 +771,25 @@ function styles(span) {
     .of-p-solid { }
     .of-p-diag {
       background-image: repeating-linear-gradient(45deg,
-        var(--of-stroke) 0 3px, transparent 3px 9px);
+        var(--of-stroke) 0 2px, transparent 2px 11px), var(--of-fill);
+      background-size: auto, 2px 2px;
     }
     .of-p-dots {
-      background-image: radial-gradient(var(--of-stroke) 1.6px, transparent 1.7px);
-      background-size: 8px 8px;
+      background-image: radial-gradient(var(--of-stroke) 1.4px, transparent 1.5px), var(--of-fill);
+      background-size: 9px 9px, 2px 2px;
     }
     .of-p-horiz {
       background-image: repeating-linear-gradient(0deg,
-        var(--of-stroke) 0 2px, transparent 2px 8px);
+        var(--of-stroke) 0 2px, transparent 2px 10px), var(--of-fill);
+      background-size: auto, 2px 2px;
     }
     .of-p-cross {
       background-image:
-        repeating-linear-gradient(45deg, var(--of-stroke) 0 2px, transparent 2px 10px),
-        repeating-linear-gradient(-45deg, var(--of-stroke) 0 2px, transparent 2px 10px);
+        repeating-linear-gradient(45deg, var(--of-stroke) 0 2px, transparent 2px 12px),
+        repeating-linear-gradient(-45deg, var(--of-stroke) 0 2px, transparent 2px 12px),
+        var(--of-fill);
+      background-size: auto, auto, 2px 2px;
     }
-    /* The legend chip fills with the accent itself, so its pattern has to
-       strike in the on-accent colour to stay visible. */
-    .of-key-chip { --of-stroke: color-mix(in oklab, var(--on-accent) 45%, transparent); }
 
     /* How much a block says, by how tall it actually is. What goes first as it
        shrinks is what we are most willing to lose: the time (its position on

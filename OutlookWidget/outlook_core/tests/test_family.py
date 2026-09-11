@@ -67,7 +67,7 @@ def test_accent_one_is_refused_because_it_is_the_now_colour(core: Any) -> None:
         core.family.clean_config({"members": [{"name": "Lea", "accent": 1}]})
 
 
-@pytest.mark.parametrize("accent", [0, 7, "purple"])
+@pytest.mark.parametrize("accent", [0, 10, "purple"])
 def test_an_accent_outside_the_member_slots_is_refused(core: Any, accent: Any) -> None:
     with pytest.raises(core.FamilyError):
         core.family.clean_config({"members": [{"name": "Lea", "accent": accent}]})

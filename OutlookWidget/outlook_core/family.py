@@ -39,8 +39,7 @@ PATTERNS = ("solid", "diag", "dots", "horiz", "cross")
 
 RULE_KINDS = ("prefix", "category", "contains", "regex", "calendar")
 
-# Admin-page labels. The hue names are the light theme's; the slot is what is
-# actually stored, and a different theme paints a different colour into it.
+# Admin-page labels.
 KIND_LABELS = {
     "prefix": "Title prefix (L: …)",
     "category": "Category is",
@@ -48,24 +47,39 @@ KIND_LABELS = {
     "regex": "Title matches (regex)",
     "calendar": "Calendar is",
 }
-ACCENT_NAMES = {2: "ochre", 3: "moss", 4: "teal", 5: "slate blue", 6: "plum"}
+# The names are what the family widget paints into each slot on a Spectra 6
+# panel: four inks at 50% over white and four two-ink mixes, all 2x2 dither
+# tiles picked on the panel (DESIGN.md D36/D37). The slot number is what is
+# actually stored.
+ACCENT_NAMES = {
+    2: "yellow",
+    3: "green",
+    4: "blue",
+    5: "red",
+    6: "orange",
+    7: "purple",
+    8: "olive",
+    9: "teal",
+}
 
-# Swatch hues for the admin page only, so a colour can be picked by eye. These
-# are the light theme's values; the panel's own theme decides the real hue, and
-# the slot number is the only thing stored.
+# Swatch hues for the admin page only, so a colour can be picked by eye: the
+# average of each slot's dither tile, which is what the eye sees on the panel.
 ACCENT_HEX = {
-    2: "#9A7414",
-    3: "#4F6F36",
-    4: "#256E6B",
-    5: "#3F5A88",
-    6: "#7E4068",
+    2: "#FFFF80",
+    3: "#80FF80",
+    4: "#8080FF",
+    5: "#FF8080",
+    6: "#FF8000",
+    7: "#800080",
+    8: "#808000",
+    9: "#00BF40",
 }
 
 # accent-1 is the design system's alerts/"now" slot — it paints the now-line
 # and today's date chip. Giving it to a person would make every panel look
-# like something was wrong, so members get 2..6 only.
+# like something was wrong, so members get 2..9 only.
 ACCENT_MIN = 2
-ACCENT_MAX = 6
+ACCENT_MAX = 9
 
 MAX_PREFIX_LETTERS = 4
 
@@ -141,7 +155,7 @@ def _clean_member(raw: Any, *, seen_ids: set[str], seen_letters: set[str]) -> di
         raise FamilyError(f"{name}'s colour has to be a number between 2 and 6.") from None
     if not ACCENT_MIN <= accent <= ACCENT_MAX:
         raise FamilyError(
-            f"{name}'s colour has to be accent 2 to 6. Accent 1 is reserved for the "
+            f"{name}'s colour has to be accent 2 to 9. Accent 1 is reserved for the "
             "'now' line and today's date."
         )
 

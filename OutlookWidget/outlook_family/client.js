@@ -107,30 +107,37 @@ export default function render(shadow, ctx) {
 // and dithers anything else.
 const INK = { K: "#000000", W: "#ffffff", Y: "#ffff00", R: "#ff0000", B: "#0000ff", G: "#00ff00" };
 
-// A 2x2 pixel tile as an SVG background. crispEdges + a 2px background-size
-// keeps every pixel on its ink; the panel then paints the tile verbatim.
-function tile(tl, tr, bl, br) {
-  const rect = (x, y, c) => `<rect x="${x}" y="${y}" width="1" height="1" fill="${INK[c]}"/>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2" shape-rendering="crispEdges">` +
-    `${rect(0, 0, tl)}${rect(1, 0, tr)}${rect(0, 1, bl)}${rect(1, 1, br)}</svg>`;
+// An n x n pixel tile as an SVG background, from a string of n*n ink letters
+// in reading order (the labels on tools/tile_test.py). crispEdges plus a
+// background-size equal to the tile keeps every pixel on its ink; the panel
+// then paints the tile verbatim. Returns the url() and the size to pair it
+// with, since a 2x2 and a 4x4 tile need different background-size values.
+function tile(spec) {
+  const n = Math.round(Math.sqrt(spec.length));
+  const rects = [...spec].map((c, i) =>
+    `<rect x="${i % n}" y="${Math.floor(i / n)}" width="1" height="1" fill="${INK[c]}"/>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" shape-rendering="crispEdges">${rects}</svg>`;
   // Percent-encoded, so the value carries no quote of either kind: it is
   // written into an inline style attribute.
-  return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
+  return { url: `url('data:image/svg+xml,${encodeURIComponent(svg)}')`, size: `${n}px ${n}px` };
 }
+
+// The weekend ground: red at 12.5% on a 4x4 lattice, picked on the panel.
+const WEEKEND = tile("RWWWWWWWWWRWWWWW");
 
 // Member slots, picked on the panel from the patch test (tools/patch_test.py):
 // four inks at 50% over white and four two-ink mixes. `line` is the solid ink
 // for the stripe, marks and pattern stroke; `text` is what stays legible on
 // the fill. Slot 1 is the now-line / today chip and is never a person.
 const SLOTS = {
-  2: { fill: tile("Y", "W", "W", "Y"), line: "Y", text: "K" }, // yellow 50%
-  3: { fill: tile("G", "W", "W", "G"), line: "G", text: "K" }, // green 50%
-  4: { fill: tile("B", "W", "W", "B"), line: "B", text: "K" }, // blue 50%
-  5: { fill: tile("R", "W", "W", "R"), line: "R", text: "K" }, // red 50%
-  6: { fill: tile("R", "Y", "Y", "R"), line: "R", text: "K" }, // orange, R+Y 50
-  7: { fill: tile("R", "B", "B", "R"), line: "B", text: "W" }, // purple, R+B 50
-  8: { fill: tile("Y", "K", "K", "Y"), line: "K", text: "W" }, // olive, Y+K 50
-  9: { fill: tile("G", "G", "B", "G"), line: "G", text: "W" }, // teal, B+G 75
+  2: { fill: tile("YWWY"), line: "Y", text: "K" }, // yellow 50%
+  3: { fill: tile("GWWG"), line: "G", text: "W" }, // green 50%
+  4: { fill: tile("BWWB"), line: "B", text: "W" }, // blue 50%
+  5: { fill: tile("RWWR"), line: "R", text: "W" }, // red 50%
+  6: { fill: tile("RYYR"), line: "R", text: "K" }, // orange, R+Y 50
+  7: { fill: tile("RBBR"), line: "B", text: "W" }, // purple, R+B 50
+  8: { fill: tile("YKKY"), line: "K", text: "W" }, // olive, Y+K 50
+  9: { fill: tile("GGBG"), line: "G", text: "W" }, // teal, B+G 75
 };
 
 function accent(member) {
@@ -138,7 +145,8 @@ function accent(member) {
   const s = SLOTS[slot];
   return {
     line: INK[s.line],
-    fill: s.fill,
+    fill: s.fill.url,
+    fillSize: s.fill.size,
     text: INK[s.text],
     // The letter on a chip or mark sits on the solid line ink: black on
     // yellow, white on everything else.
@@ -149,13 +157,13 @@ function accent(member) {
 // Unassigned events are drawn, never hidden: an event vanishing because a
 // rule stopped firing is the failure nobody would notice. Plain white, black
 // stripe.
-const UNOWNED = { line: INK.K, fill: "none", text: INK.K, ink: INK.W };
+const UNOWNED = { line: INK.K, fill: "none", fillSize: "2px 2px", text: INK.K, ink: INK.W };
 
 function paint(member) {
-  const { line, fill, text } = member ? accent(member) : UNOWNED;
+  const { line, fill, fillSize, text } = member ? accent(member) : UNOWNED;
   // The pattern stroke is the line ink itself: a colour-mixed stroke would
   // be a second dither field on top of the fill.
-  return `--of-line:${line};--of-fill:${fill};--of-stroke:${line};--of-text:${text}`;
+  return `--of-line:${line};--of-fill:${fill};--of-fill-size:${fillSize};--of-stroke:${line};--of-text:${text}`;
 }
 
 function ownersOf(event, members) {
@@ -460,14 +468,15 @@ function edgeHtml(items, members, direction) {
     </div>`;
 }
 
+// One label per hour, each placed at the exact height of its rule rather than
+// spread by flexbox: space-between plus the base stylesheet's edge tweaks put
+// the first and last label half a line off their lines.
 function hourLabels(hours) {
+  const span = Math.max(1, hours.end - hours.start);
   const out = [];
   for (let h = hours.start; h <= hours.end; h++) {
-    // Counted from the window start, not from midnight, so a 07:00 start
-    // labels 07 rather than leaving the top edge blank.
-    out.push((h - hours.start) % 2 === 0
-      ? `<span>${String(h).padStart(2, "0")}</span>`
-      : `<span style="opacity:0">·</span>`);
+    const pct = ((h - hours.start) / span) * 100;
+    out.push(`<span style="top:${pct.toFixed(3)}%">${String(h).padStart(2, "0")}</span>`);
   }
   return out.join("");
 }
@@ -539,11 +548,11 @@ function styles(span) {
     }
     .of-key { display: inline-flex; align-items: center; gap: 0.4em; }
     .of-key-chip {
-      width: 1.35em; height: 1.35em;
+      width: calc(var(--fs-caption) * 2.7); height: calc(var(--fs-caption) * 2.7);
       display: inline-grid; place-items: center;
-      font-size: var(--fs-caption); font-weight: var(--fw-black);
+      font-size: calc(var(--fs-caption) * 1.7); font-weight: var(--fw-black);
       background-color: #fff;
-      background-image: var(--of-fill); background-size: 2px 2px;
+      background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       border-radius: var(--radius-0, 2px);
       box-shadow: inset 0 0 0 1px #000;
     }
@@ -574,33 +583,51 @@ function styles(span) {
 
     /* Solid dark rules between the days. A faint --surface-sunken line
        dithers to nothing on the panel, and without it seven columns of
-       tiles read as one field. The weekend carries no tint for the same
-       reason: a 3% wash is dither, not a signal. */
+       tiles read as one field. */
     .of-lane {
       position: relative; display: flex; min-width: 0;
       border-left: 1px solid #000;
     }
     .of-lane:last-child { border-right: 1px solid #000; }
+    /* The weekend ground is a 4x4 tile (red at 12.5%), not a wash: a wash
+       is dither, a tile is painted verbatim. */
+    .of-lane.is-weekend {
+      background-image: ${WEEKEND.url}; background-size: ${WEEKEND.size};
+    }
     .of-gutter {
       position: relative; flex: 0 0 auto;
       border-right: 1px solid #000;
     }
-    .of-main {
-      position: relative; flex: 1 1 auto; min-width: 0;
-      /* One rule every two hours so the eye can sweep a time across all
-         the columns. Percentages resolve against the lane's height. There
-         is no faint ink on this panel, so "faint" is a 1px black line cut
-         into dashes: the top layer is white stripes that only show where
-         they cross the black rule below. */
-      background-image:
-        repeating-linear-gradient(to right, transparent 0 2px, #fff 2px 5px),
-        repeating-linear-gradient(
-          to bottom,
-          transparent 0,
-          transparent calc((2 * 100% / ${span}) - 1px),
-          #000 calc((2 * 100% / ${span}) - 1px),
-          #000 calc(2 * 100% / ${span})
-        );
+    .of-main { position: relative; flex: 1 1 auto; min-width: 0; }
+    /* One rule per hour so the eye can sweep a time across all the
+       columns. Percentages resolve against the lane's height. There is no
+       faint ink on this panel, so "faint" is a 1px black line cut into
+       dashes: the rules are drawn on a pseudo-element and masked to
+       2px-on / 3px-off, so the ground underneath (white, or the weekend
+       tile) shows through the gaps. Tiles are positioned later in the DOM
+       and paint over it. */
+    .of-main::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc((100% / ${span}) - 1px),
+        #000 calc((100% / ${span}) - 1px),
+        #000 calc(100% / ${span})
+      );
+      -webkit-mask-image: repeating-linear-gradient(to right, #000 0 2px, transparent 2px 5px);
+      mask-image: repeating-linear-gradient(to right, #000 0 2px, transparent 2px 5px);
+    }
+
+    /* Hour labels sit on their rules: absolute at the rule's height, centred
+       on it. The base sheet lays them out with flexbox and nudges the first
+       and last, which is what left them half a line off. */
+    .tt-hours { display: block; position: relative; }
+    .tt-hours span,
+    .tt-hours span:first-child,
+    .tt-hours span:last-child {
+      position: absolute; right: var(--space-3);
+      line-height: 1; transform: translateY(-50%);
     }
 
     /* Appointments. The stripe is a child, so it can be split per owner.
@@ -609,7 +636,7 @@ function styles(span) {
     .of-ev {
       position: absolute; overflow: hidden;
       background-color: #fff;
-      background-image: var(--of-fill); background-size: 2px 2px;
+      background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       color: var(--of-text, #000);
       /* White tiles need an edge to read as tiles. An outline, not a
          border, so the size container's height is unchanged. */
@@ -703,7 +730,7 @@ function styles(span) {
       display: inline-grid; place-items: center;
       width: 1.15em; height: 1.15em; flex: 0 0 auto;
       border-radius: var(--radius-0, 2px);
-      font-size: calc(var(--fs-caption) * 0.62); font-weight: var(--fw-black);
+      font-size: calc(var(--fs-caption) * 0.85); font-weight: var(--fw-black);
       color: var(--on-accent);
       box-shadow: inset 0 0 0 1px #000;
     }
@@ -713,7 +740,7 @@ function styles(span) {
     .of-bar {
       position: absolute; overflow: hidden;
       background-color: #fff;
-      background-image: var(--of-fill); background-size: 2px 2px;
+      background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       color: var(--of-text, #000);
       outline: 1px solid #000; outline-offset: -1px;
       border-left: 3px solid var(--of-line);
@@ -736,7 +763,7 @@ function styles(span) {
       position: relative; overflow: hidden;
       display: flex; align-items: center; gap: 0.25em;
       background-color: #fff;
-      background-image: var(--of-fill); background-size: 2px 2px;
+      background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       color: var(--of-text, #000);
       outline: 1px solid #000; outline-offset: -1px;
       padding: 1px var(--space-2) 1px calc(var(--space-2) + 5px);
@@ -772,23 +799,23 @@ function styles(span) {
     .of-p-diag {
       background-image: repeating-linear-gradient(45deg,
         var(--of-stroke) 0 2px, transparent 2px 11px), var(--of-fill);
-      background-size: auto, 2px 2px;
+      background-size: auto, var(--of-fill-size, 2px 2px);
     }
     .of-p-dots {
       background-image: radial-gradient(var(--of-stroke) 1.4px, transparent 1.5px), var(--of-fill);
-      background-size: 9px 9px, 2px 2px;
+      background-size: 9px 9px, var(--of-fill-size, 2px 2px);
     }
     .of-p-horiz {
       background-image: repeating-linear-gradient(0deg,
         var(--of-stroke) 0 2px, transparent 2px 10px), var(--of-fill);
-      background-size: auto, 2px 2px;
+      background-size: auto, var(--of-fill-size, 2px 2px);
     }
     .of-p-cross {
       background-image:
         repeating-linear-gradient(45deg, var(--of-stroke) 0 2px, transparent 2px 12px),
         repeating-linear-gradient(-45deg, var(--of-stroke) 0 2px, transparent 2px 12px),
         var(--of-fill);
-      background-size: auto, auto, 2px 2px;
+      background-size: auto, auto, var(--of-fill-size, 2px 2px);
     }
 
     /* How much a block says, by how tall it actually is. What goes first as it

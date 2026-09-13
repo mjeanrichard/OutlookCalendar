@@ -57,9 +57,9 @@ ACCENT_NAMES = {
     4: "blue",
     5: "red",
     6: "orange",
-    7: "purple",
-    8: "olive",
-    9: "teal",
+    7: "lime",
+    8: "pink",
+    9: "olive",
 }
 
 # Swatch hues for the admin page only, so a colour can be picked by eye: the
@@ -70,9 +70,9 @@ ACCENT_HEX = {
     4: "#8080FF",
     5: "#FF8080",
     6: "#FF8000",
-    7: "#800080",
-    8: "#808000",
-    9: "#00BF40",
+    7: "#80FF40",
+    8: "#BF80BF",
+    9: "#808000",
 }
 
 # accent-1 is the design system's alerts/"now" slot — it paints the now-line

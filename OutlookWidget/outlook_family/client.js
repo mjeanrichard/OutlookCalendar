@@ -125,19 +125,19 @@ function tile(spec) {
 // The weekend ground: red at 12.5% on a 4x4 lattice, picked on the panel.
 const WEEKEND = tile("RWWWWWWWWWRWWWWW");
 
-// Member slots, picked on the panel from the patch test (tools/patch_test.py):
-// four inks at 50% over white and four two-ink mixes. `line` is the solid ink
-// for the stripe, marks and pattern stroke; `text` is what stays legible on
-// the fill. Slot 1 is the now-line / today chip and is never a person.
+// Member slots, picked on the panel from the tile test (tools/tile_test.py),
+// light enough that text is black on every one of them. `line` is the solid
+// ink for the stripe, marks and pattern stroke. Slot 1 is the now-line /
+// today chip and is never a person.
 const SLOTS = {
   2: { fill: tile("YWWY"), line: "Y", text: "K" }, // yellow 50%
-  3: { fill: tile("GWWG"), line: "G", text: "W" }, // green 50%
-  4: { fill: tile("BWWB"), line: "B", text: "W" }, // blue 50%
-  5: { fill: tile("RWWR"), line: "R", text: "W" }, // red 50%
+  3: { fill: tile("GWWG"), line: "G", text: "K" }, // green 50%
+  4: { fill: tile("BWWB"), line: "B", text: "K" }, // blue 50%
+  5: { fill: tile("RWWR"), line: "R", text: "K" }, // red 50%
   6: { fill: tile("RYYR"), line: "R", text: "K" }, // orange, R+Y 50
-  7: { fill: tile("RBBR"), line: "B", text: "W" }, // purple, R+B 50
-  8: { fill: tile("YKKY"), line: "K", text: "W" }, // olive, Y+K 50
-  9: { fill: tile("GGBG"), line: "G", text: "W" }, // teal, B+G 75
+  7: { fill: tile("GYWG"), line: "G", text: "K" }, // lime, G+Y+W 2:1:1
+  8: { fill: tile("RWWB"), line: "B", text: "K" }, // pink, R+B+W 1:1:2
+  9: { fill: tile("YKKY"), line: "K", text: "K" }, // olive, Y+K 50
 };
 
 function accent(member) {
@@ -188,6 +188,32 @@ function stripeHtml(owners) {
     .map((m, i) => `${accent(m).line} ${(i * step).toFixed(2)}% ${((i + 1) * step).toFixed(2)}%`)
     .join(",");
   return `<span class="of-stripe" style="background:linear-gradient(to bottom,${stops})"></span>`;
+}
+
+// A shared event shows every owner's fill, side by side in the order the
+// stripe uses (D13/D38): one absolutely positioned segment per owner, each
+// carrying its own tile and pattern, painted under the text. The element's
+// own fill is switched off so the first owner's colour does not show through
+// between segments. One owner (or none) needs no segments.
+function fillsHtml(owners) {
+  if (owners.length < 2) return "";
+  const step = 100 / owners.length;
+  return owners
+    .map((m, i) => `<span class="of-fillseg ${patternClass([m])}" style="${paint(m)};left:${(i * step).toFixed(2)}%;width:${step.toFixed(2)}%"></span>`)
+    .join("");
+}
+
+// The style and class an owned block itself carries: its first owner's paint
+// (line ink, text colour, and the fill when it is the only owner) and its
+// pattern — or, when shared, no fill and no pattern of its own, since the
+// segments bring theirs.
+function blockPaint(owners) {
+  const style = paint(owners[0]);
+  return owners.length > 1 ? `${style};--of-fill:none` : style;
+}
+
+function blockPattern(owners) {
+  return owners.length > 1 ? "of-p-solid" : patternClass(owners);
 }
 
 // Every owner's initial, on every block that has room for it. Colour alone
@@ -359,8 +385,9 @@ function bandsHtml(bands, dayCount, members) {
       const owners = ownersOf(band, members);
       const columns = Math.min(dayCount - band.first, band.last - band.first + 1);
       return `
-        <div class="of-band ${patternClass(owners)}"
-             style="${paint(owners[0])};grid-column:${band.first + 1} / span ${columns};grid-row:${lane + 1}">
+        <div class="of-band ${blockPattern(owners)}"
+             style="${blockPaint(owners)};grid-column:${band.first + 1} / span ${columns};grid-row:${lane + 1}">
+          ${fillsHtml(owners)}
           ${stripeHtml(owners)}
           ${initialsHtml(owners)}
           <span class="of-band-name">${esc(band.title || band.summary || "")}</span>
@@ -398,9 +425,10 @@ function laneHtml(day, opts) {
     const to = indices.length ? Math.max(...indices) : 0;
     const { top, height } = pctSpan(item.top, item.bottom, hours);
     return `
-      <div class="of-bar ${patternClass(owners)} ${clipClasses(item.top, item.bottom, hours)}"
-           style="${paint(owners[0])};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
+      <div class="of-bar ${blockPattern(owners)} ${clipClasses(item.top, item.bottom, hours)}"
+           style="${blockPaint(owners)};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
                   left:${from * GUTTER_PX}px;width:${(to - from + 1) * GUTTER_PX - 1}px">
+        ${fillsHtml(owners)}
         <span class="of-bar-name">${esc(item.event.title || item.event.summary || "")}</span>
       </div>`;
   }).join("");
@@ -417,12 +445,14 @@ function laneHtml(day, opts) {
     const left = item.column * width;
     const { top, height } = pctSpan(item.top, item.bottom, hours);
     // Everything is emitted; the CSS drops the meta line, then the title, as
-    // the block gets shorter. Two-line titles are also a CSS decision, but
-    // only where a column is wide enough to be worth wrapping into.
+    // the block gets shorter. Wrapping is a CSS decision too, by height: a
+    // narrow column in a three-way cluster gets a word broken over its lines
+    // rather than one letter and an ellipsis.
     return `
-      <div class="of-ev ${patternClass(owners)} ${columns < 3 ? "can-wrap" : ""} ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""} ${clipClasses(item.top, item.bottom, hours)}"
-           style="${paint(owners[0])};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
+      <div class="of-ev ${blockPattern(owners)} can-wrap ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""} ${clipClasses(item.top, item.bottom, hours)}"
+           style="${blockPaint(owners)};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
                   left:calc(${left}% + 1px);width:calc(${width}% - 2px)">
+        ${fillsHtml(owners)}
         ${stripeHtml(owners)}
         <span class="of-name">${esc(event.title || event.summary || "")}</span>
         <span class="of-meta"><span class="of-time">${esc(fmtHm(event.start))}</span></span>
@@ -548,9 +578,9 @@ function styles(span) {
     }
     .of-key { display: inline-flex; align-items: center; gap: 0.4em; }
     .of-key-chip {
-      width: calc(var(--fs-caption) * 2.7); height: calc(var(--fs-caption) * 2.7);
+      width: 1.35em; height: 1.35em;
       display: inline-grid; place-items: center;
-      font-size: calc(var(--fs-caption) * 1.7); font-weight: var(--fw-black);
+      font-size: var(--fs-caption); font-weight: var(--fw-black);
       background-color: #fff;
       background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       border-radius: var(--radius-0, 2px);
@@ -634,7 +664,7 @@ function styles(span) {
        Each block is its own size container, which is what lets the rules
        further down drop text by the block's real pixel height. */
     .of-ev {
-      position: absolute; overflow: hidden;
+      position: absolute; overflow: hidden; isolation: isolate;
       background-color: #fff;
       background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       color: var(--of-text, #000);
@@ -649,6 +679,14 @@ function styles(span) {
     }
     /* No opacity on routine blocks: 75% black text is grey, and grey dithers. */
     .of-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; }
+    /* Shared events: one fill segment per owner, under the text (z-index -1
+       inside the block's own stacking context), each with its own tile and
+       pattern, in stripe order. */
+    .of-fillseg {
+      position: absolute; top: 0; bottom: 0; z-index: -1;
+      background-color: #fff;
+      background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
+    }
     .of-name {
       font-size: var(--fs-caption); font-weight: var(--fw-black);
       color: inherit;
@@ -724,13 +762,13 @@ function styles(span) {
       pointer-events: none;
     }
 
-    /* Small enough that a one-hour block still has room for its title on the
-       line above — that is the tightest tile the mark has to share. */
+    /* Twice the size it started at, so the letter reads from across the
+       room; the container rules below hide it on tiles too short to share. */
     .of-mark {
       display: inline-grid; place-items: center;
-      width: 1.15em; height: 1.15em; flex: 0 0 auto;
+      width: 1.3em; height: 1.3em; flex: 0 0 auto;
       border-radius: var(--radius-0, 2px);
-      font-size: calc(var(--fs-caption) * 0.85); font-weight: var(--fw-black);
+      font-size: calc(var(--fs-caption) * 1.1); font-weight: var(--fw-black);
       color: var(--on-accent);
       box-shadow: inset 0 0 0 1px #000;
     }
@@ -738,7 +776,7 @@ function styles(span) {
     /* Routine bars: vertical labels, so a long word like "Fussballtraining"
        costs height (which the bar has) instead of width (which it doesn't). */
     .of-bar {
-      position: absolute; overflow: hidden;
+      position: absolute; overflow: hidden; isolation: isolate;
       background-color: #fff;
       background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       color: var(--of-text, #000);
@@ -760,7 +798,7 @@ function styles(span) {
     /* All-day / multi-day bars across the top. */
     .of-bands { display: grid; gap: 2px; padding-bottom: var(--space-1); }
     .of-band {
-      position: relative; overflow: hidden;
+      position: relative; overflow: hidden; isolation: isolate;
       display: flex; align-items: center; gap: 0.25em;
       background-color: #fff;
       background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
@@ -830,24 +868,60 @@ function styles(span) {
        it there is only room for one line, and the marks would land on the
        title's last characters — so that is where they get their own room, and
        only on tiles that actually have a mark to place. */
-    @container ofev (max-height: 26px) {
+    @container ofev (max-height: 36px) {
       .of-ev.has-marks .of-name { padding-right: 2.4em; }
     }
-    @container ofev (max-height: 20px) {
+    @container ofev (max-height: 24px) {
       .of-marks { display: none; }
       .of-ev.has-marks .of-name { padding-right: 0; }
     }
     @container ofev (max-height: 17px) {
       .of-name { display: none; }
     }
-    /* Two lines of title plus the meta line need ~60px between them. Wrapping
-       any earlier clamps the second line to a lone ellipsis and pushes the
-       time out of the box. */
-    @container ofev (min-height: 62px) {
+    /* As many title lines as the tile has room for. A title line is 0.79em
+       of the tile's font (caption 0.72 x line-height 1.1) and the time line
+       under it ~0.8em with its padding, so N lines need about N x 0.79 +
+       0.8em; the thresholds are in em so they follow the cell's fluid type
+       size instead of being right at one panel size only. Clamping rather
+       than letting the box overflow: a row of clipped letter-tops reads
+       worse than an ellipsis. Wrapping any earlier than two lines fit
+       clamps the second line to a lone ellipsis and pushes the time out. */
+    @container ofev (min-height: 2.4em) {
       .of-ev.can-wrap .of-name {
         white-space: normal; word-break: break-word; hyphens: auto;
         display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
         -webkit-box-orient: vertical;
+      }
+    }
+    @container ofev (min-height: 3.2em) {
+      .of-ev.can-wrap .of-name { -webkit-line-clamp: 3; line-clamp: 3; }
+    }
+    @container ofev (min-height: 4em) {
+      .of-ev.can-wrap .of-name { -webkit-line-clamp: 4; line-clamp: 4; }
+    }
+    @container ofev (min-height: 4.8em) {
+      .of-ev.can-wrap .of-name { -webkit-line-clamp: 5; line-clamp: 5; }
+    }
+    @container ofev (min-height: 5.6em) {
+      .of-ev.can-wrap .of-name { -webkit-line-clamp: 6; line-clamp: 6; }
+    }
+    /* A tile narrower than about 3.5em (a three-way cluster in a
+       seven-day week) cannot wrap into anything readable: one or two letters
+       a line. It runs the title down the tile instead, the way the routine
+       gutter does (D16), stopping above the marks; the time goes, its position
+       on the axis says roughly when. Placed after the wrap rules so it wins. */
+    @container ofev (max-width: 3.5em) {
+      .of-ev { display: block; }
+      .of-meta, .of-loc { display: none; }
+      .of-ev .of-name, .of-ev.can-wrap .of-name, .of-ev.has-marks .of-name {
+        display: block; padding-right: 0;
+        /* vertical-lr, not -rl: the block's first (only) line then sits at
+           the tile's left edge, beside the stripe, instead of at the right. */
+        writing-mode: vertical-lr; text-orientation: mixed;
+        font-size: calc(var(--fs-caption) * 0.8);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        height: calc(100% - 1.5em); width: auto;
+        -webkit-line-clamp: unset; line-clamp: unset;
       }
     }
     /* A routine bar too short for its vertical label keeps the bar; the

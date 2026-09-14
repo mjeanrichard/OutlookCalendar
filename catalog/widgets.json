@@ -4,7 +4,7 @@
     {
       "id": "outlook",
       "name": "Outlook family calendar",
-      "description": "Your Outlook calendar as a family timetable: a column per day, every appointment tinted, patterned and initialled with whoever it belongs to. Signs in to Microsoft Graph directly, so the panel shows the private calendar live rather than a cached iCal feed.",
+      "description": "Your Outlook calendar as a family timetable and a family wall calendar: a column per day for the week, a row per week for the month, every appointment tinted, patterned and initialled with whoever it belongs to. Signs in to Microsoft Graph directly, so the panel shows the private calendar live rather than a cached iCal feed.",
       "icon": "ph-users-three",
       "author": {
         "name": "Meinrad Jean-Richard",
@@ -20,7 +20,8 @@
       ],
       "folders": [
         "outlook_core",
-        "outlook_family"
+        "outlook_family",
+        "outlook_month"
       ],
       "release": {
         "version": "1.0.1",

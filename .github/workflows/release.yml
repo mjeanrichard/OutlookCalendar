@@ -33,7 +33,7 @@ concurrency:
 env:
   # The only knobs. outlook_week stays out until its client.js is a real render
   # rather than the placeholder debug list.
-  BUNDLE_FOLDERS: "outlook_core outlook_family"
+  BUNDLE_FOLDERS: "outlook_core outlook_family outlook_month"
   BUNDLE_NAME: outlook-widgets
   SEED_VERSION: "1.0.0"
   PLUGIN_ROOT: OutlookWidget

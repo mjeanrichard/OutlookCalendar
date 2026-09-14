@@ -12,8 +12,9 @@ Graph instead, so the panel shows the private calendar as it actually is.
 | `outlook_core/` | `data` | Sign-in, token handling, calendar list, caching, the family. No widget of its own. |
 | `outlook_week/` | `widget` | The next N days grouped by day. |
 | `outlook_family/` | `widget` | The family timetable: a column per day, a colour and pattern per person. |
+| `outlook_month/` | `widget` | The family wall calendar: a row per week starting with this one, a chip per event, no times. |
 
-[`DESIGN.md`](DESIGN.md) records how the family view works and the decisions behind it.
+[`DESIGN.md`](DESIGN.md) records how the family views work and the decisions behind them.
 
 Everything else at the repo root is development scaffolding: `devserver.py`,
 `conftest.py`, `_devsupport.py`, `_tests/`, `_docs/`. The underscore prefixes are
@@ -21,7 +22,7 @@ load-bearing — Tesserae treats every other folder here as a plugin.
 
 ## Status
 
-`outlook_core` and `outlook_family` are done and tested. `outlook_week`'s
+`outlook_core`, `outlook_family` and `outlook_month` are done and tested. `outlook_week`'s
 `client.js` is still a placeholder list; its real per-size layout is a separate
 task.
 
@@ -158,9 +159,9 @@ Two switches per rule:
 - **Strip** removes the matched text from the title the panel draws. Turn it on
   for prefixes: the person is already in the block's colour and stripe, so the
   letters are just spending width.
-- **Routine** sends the matches to a narrow gutter down the side of the day,
-  labelled vertically. School and office hours would otherwise flood the grid
-  and squeeze every real appointment into a sliver.
+- **Routine** draws the matches as narrow bars at the left of the day, over
+  their own hours, labelled vertically. School and office hours would otherwise
+  flood the grid and squeeze every real appointment into a sliver.
 
 Under the rules is a **matched nothing this week** tray. Those events still
 appear on the panel, in grey — nothing is ever hidden because a rule didn't
@@ -220,6 +221,11 @@ every future `outlook_*` widget agrees about what a panel should show.
 annotated with `members`, `routine` and a `title` that has any matched prefix
 stripped out. Ownership is therefore resolved once, on the server, and no
 widget needs to know how it was configured.
+
+`outlook_month` takes the same resolved events over a longer window — the
+current week plus the next few — drops anything a rule marked as routine, and
+groups them by day the same way; its client draws weeks as rows instead of
+days as columns.
 
 ## Publishing
 

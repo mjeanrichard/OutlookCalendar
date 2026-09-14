@@ -1,0 +1,148 @@
+{
+  "tesserae_compat": "1.x",
+  "name": "Outlook, Family Month",
+  "version": "0.0.0-dev",
+  "kind": "widget",
+  "description": "The coming weeks as a family wall calendar: a column per weekday, a row per week, starting with the current week so almost nothing on the panel is already over. Every appointment is a titled chip tinted, patterned and initialled with whoever it belongs to, and trips become bars across the days they cover. Who owns what is configured once on the Outlook Core page. Times are left off: the week widget is for today, this one is for the month.",
+  "icon": "ph-calendar-dots",
+  "supports": { "sizes": ["md", "lg"] },
+  "cell_options": [
+    {
+      "name": "calendars",
+      "type": "multiselect",
+      "label": "Calendars",
+      "choices_from": "calendars",
+      "help": "Leave empty for your default Outlook calendar."
+    },
+    {
+      "name": "members",
+      "type": "multiselect",
+      "label": "Show these people",
+      "choices_from": "family_members",
+      "help": "Leave empty for everyone. Set up the family on the Outlook Core plugin page."
+    },
+    {
+      "name": "weeks",
+      "type": "slider",
+      "label": "Weeks to show",
+      "default": 4,
+      "min": 2,
+      "max": 6,
+      "step": 1,
+      "unit": "w",
+      "help": "Always starts with the current week, so at most six days are already over. Fewer weeks means taller rows and more room for titles."
+    },
+    {
+      "name": "week_start",
+      "type": "select",
+      "label": "Weeks start on",
+      "default": "monday",
+      "choices": [
+        { "value": "monday", "label": "Monday" },
+        { "value": "sunday", "label": "Sunday" }
+      ]
+    },
+    {
+      "name": "past_days",
+      "type": "select",
+      "label": "Days already over",
+      "default": "hollow",
+      "choices": [
+        { "value": "hollow", "label": "Hollow chips (outline, stripe and initial only)" },
+        { "value": "painted", "label": "Painted like every other day" }
+      ],
+      "help": "Only the current week can hold days that are over. Hollow chips read as done without needing a grey the panel cannot draw."
+    },
+    {
+      "name": "show_routine",
+      "type": "boolean",
+      "label": "Show routine",
+      "default": false,
+      "help": "Draws events a rule marked as routine — school, office hours — as chips like everything else. Off by default: a daily commitment on every day of the month says nothing and crowds out what does."
+    }
+  ],
+  "updates": {
+    "on_schedule": [{ "kind": "daily", "suggested_at": "06:00" }]
+  },
+  "render": { "dither": "none", "needs_network": true },
+  "requires": [
+    "network:login.microsoftonline.com",
+    "network:graph.microsoft.com",
+    "settings:plugin/outlook_core"
+  ],
+  "data_schema": {
+    "color": "#0F6CBD",
+    "fields": [
+      { "name": "count", "type": "num", "label": "Event count" },
+      { "name": "days", "type": "arr", "label": "Days" },
+      { "name": "bands", "type": "arr", "label": "Multi-day events" },
+      { "name": "members", "type": "arr", "label": "Family members" },
+      { "name": "stale", "type": "str", "label": "Serving cached data" }
+    ],
+    "sample": {
+      "count": 3,
+      "stale": false,
+      "weeks": 4,
+      "week_start": "monday",
+      "past_days": "hollow",
+      "start": "2026-08-17",
+      "end": "2026-09-14",
+      "members": [
+        { "id": "papa", "name": "Papa", "letter": "P", "accent": 5, "pattern": "solid", "everyone": false },
+        { "id": "lea", "name": "Lea", "letter": "L", "accent": 3, "pattern": "dots", "everyone": false },
+        { "id": "familie", "name": "Familie", "letter": "F", "accent": 4, "pattern": "cross", "everyone": true }
+      ],
+      "bands": [
+        {
+          "summary": "Tessin",
+          "title": "Tessin",
+          "start": "2026-08-22T00:00:00+02:00",
+          "end": "2026-08-24T00:00:00+02:00",
+          "all_day": true,
+          "members": ["familie"],
+          "routine": false,
+          "first": 5,
+          "last": 6
+        }
+      ],
+      "days": [
+        {
+          "date": "2026-08-21",
+          "weekday": "Friday",
+          "day": 21,
+          "is_today": true,
+          "is_past": false,
+          "is_weekend": false,
+          "events": [
+            {
+              "summary": "L: Klavier",
+              "title": "Klavier",
+              "start": "2026-08-21T16:00:00+02:00",
+              "end": "2026-08-21T17:00:00+02:00",
+              "all_day": false,
+              "location": "Musikschule",
+              "show_as": "busy",
+              "response": "accepted",
+              "categories": [],
+              "members": ["lea"],
+              "routine": false
+            },
+            {
+              "summary": "Brunch Grosseltern",
+              "title": "Brunch Grosseltern",
+              "start": "2026-08-21T11:00:00+02:00",
+              "end": "2026-08-21T14:00:00+02:00",
+              "all_day": false,
+              "location": "",
+              "show_as": "busy",
+              "response": "accepted",
+              "categories": [],
+              "members": ["familie"],
+              "routine": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

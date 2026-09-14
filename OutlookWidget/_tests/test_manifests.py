@@ -20,7 +20,7 @@ from flask import Flask
 
 from _devsupport import TESSERAE_REPO, WIDGET_ROOT
 
-PLUGIN_IDS = ("outlook_core", "outlook_family", "outlook_week")
+PLUGIN_IDS = ("outlook_core", "outlook_family", "outlook_month", "outlook_week")
 
 # What plugin.json carries in git. CI overwrites it at release time.
 RELEASE_SENTINEL_VERSION = "0.0.0-dev"
@@ -50,7 +50,7 @@ def test_every_host_the_code_calls_is_declared(plugin_id: str, core: Any) -> Non
     assert used <= declared, f"{plugin_id} would be denied at the socket layer"
 
 
-@pytest.mark.parametrize("plugin_id", ["outlook_week", "outlook_family"])
+@pytest.mark.parametrize("plugin_id", ["outlook_week", "outlook_family", "outlook_month"])
 def test_the_widgets_declare_their_settings_dependency(plugin_id: str) -> None:
     assert "settings:plugin/outlook_core" in _manifest(plugin_id)["requires"]
 
@@ -63,6 +63,12 @@ def test_the_family_widget_skips_the_sizes_a_timetable_cannot_hold() -> None:
     """Seven columns and a fourteen-hour axis need room; xs (180x180) and sm
     (380x240) would be a grid of unlabelled slivers."""
     assert _manifest("outlook_family")["supports"]["sizes"] == ["md", "lg"]
+
+
+def test_the_month_widget_skips_the_sizes_a_grid_cannot_hold() -> None:
+    """Seven columns by four weeks: at md a cell shows owner marks only, and
+    below that not even those."""
+    assert _manifest("outlook_month")["supports"]["sizes"] == ["md", "lg"]
 
 
 def test_no_cell_option_is_named_label() -> None:

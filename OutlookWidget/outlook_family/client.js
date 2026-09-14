@@ -8,8 +8,9 @@
  * Three rules about spending pixels, because the title has first claim on all
  * of them:
  *
- *   1. Routine (school, office hours) goes to a narrow gutter down the left
- *      of the day with its label set vertically, so it costs no width.
+ *   1. Routine (school, office hours) is drawn as a narrow bar with its
+ *      label set vertically, and only over its own hours: an appointment
+ *      beside it is indented past it, one after it has the whole column.
  *   2. A shared event splits its owner stripe between the people involved
  *      rather than prefixing the title with their names.
  *   3. Out-of-window events become a counted chevron at the column's edge.
@@ -19,9 +20,10 @@
  * event arrives with `members`, `routine` and an already-stripped `title`.
  */
 
-// One routine slot. Wide enough that a vertical label still has room to
-// read after the stripe takes its 2px; a day with no routine has no gutter.
-const GUTTER_PX = 15;
+// One routine bar: exactly one owner mark wide (1.3em of the mark's type,
+// see .of-mark), which is also a caption-size line of vertical text plus a
+// little air. Narrower than this and the label is a smear of glyph sides.
+const BAR_PX = 29;
 const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTH = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
                "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -53,7 +55,7 @@ export default function render(shadow, ctx) {
   const days = Array.isArray(data.days) ? data.days : [];
   const hours = data.hours || { start: 7, end: 21 };
   const span = Math.max(1, hours.end - hours.start);
-  const useGutter = data.routine_gutter !== false;
+  const narrowRoutine = data.routine_gutter !== false;
 
   if (!days.length) {
     shadow.innerHTML = `
@@ -66,7 +68,7 @@ export default function render(shadow, ctx) {
   }
 
   const lanes = days
-    .map((day) => laneHtml(day, { members, hours, useGutter, data }))
+    .map((day) => laneHtml(day, { members, hours, narrowRoutine, data }))
     .join("");
 
   const heads = days.map((day) => headHtml(day)).join("");
@@ -83,10 +85,10 @@ export default function render(shadow, ctx) {
       <div class="w-title">
         <i class="ph-bold ph-users-three" style="color:#000"></i>
         <h3>Familie</h3>
+        ${legendHtml(data.members || [])}
         <span class="w-title-meta">${esc(rangeLabel(days))}${data.stale ? " · cached" : ""}</span>
       </div>
       <div class="w-body cal-body">
-        ${legendHtml(data.members || [])}
         <div class="of-grid" style="grid-template-columns:2.6em repeat(${days.length},minmax(0,1fr));
              grid-template-rows:auto ${bands ? "auto" : ""} minmax(0,1fr)">
           <div></div>
@@ -125,6 +127,18 @@ function tile(spec) {
 // The weekend ground: red at 12.5% on a 4x4 lattice, picked on the panel.
 const WEEKEND = tile("RWWWWWWWWWRWWWWW");
 
+// A solid black triangle, w x h pixels, pointing up or down, as an SVG
+// background. Not a border trick: a border triangle's diagonals are
+// anti-aliased, the up and down paths do not get the same grey pixels, and
+// the panel's quantiser then turns those greys into two visibly different
+// shapes. crispEdges gives a pixel-exact polygon, and the down one is the
+// up one mirrored, so they are the same ink.
+function tri(direction, w, h) {
+  const points = direction === "up" ? `0,${h} ${w},${h} ${w / 2},0` : `0,0 ${w},0 ${w / 2},${h}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" shape-rendering="crispEdges"><polygon points="${points}" fill="#000"/></svg>`;
+  return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
+}
+
 // Member slots, picked on the panel from the tile test (tools/tile_test.py),
 // light enough that text is black on every one of them. `line` is the solid
 // ink for the stripe, marks and pattern stroke. Slot 1 is the now-line /
@@ -148,16 +162,13 @@ function accent(member) {
     fill: s.fill.url,
     fillSize: s.fill.size,
     text: INK[s.text],
-    // The letter on a chip or mark sits on the solid line ink: black on
-    // yellow, white on everything else.
-    ink: s.line === "Y" ? INK.K : INK.W,
   };
 }
 
 // Unassigned events are drawn, never hidden: an event vanishing because a
 // rule stopped firing is the failure nobody would notice. Plain white, black
 // stripe.
-const UNOWNED = { line: INK.K, fill: "none", fillSize: "2px 2px", text: INK.K, ink: INK.W };
+const UNOWNED = { line: INK.K, fill: "none", fillSize: "2px 2px", text: INK.K };
 
 function paint(member) {
   const { line, fill, fillSize, text } = member ? accent(member) : UNOWNED;
@@ -175,19 +186,14 @@ function patternClass(owners) {
   return `of-p-${["solid", "diag", "dots", "horiz", "cross"].includes(pattern) ? pattern : "solid"}`;
 }
 
-// The stripe is a child element, not a border, so several owners can share it
-// as hard-stop gradient segments. This is what lets a shared event say who
-// it belongs to without taking a single pixel from the title.
-function stripeHtml(owners) {
-  if (owners.length < 2) {
-    const colour = owners.length ? accent(owners[0]).line : UNOWNED.line;
-    return `<span class="of-stripe" style="background:${colour}"></span>`;
-  }
-  const step = 100 / owners.length;
-  const stops = owners
-    .map((m, i) => `${accent(m).line} ${(i * step).toFixed(2)}% ${((i + 1) * step).toFixed(2)}%`)
-    .join(",");
-  return `<span class="of-stripe" style="background:linear-gradient(to bottom,${stops})"></span>`;
+// The stripe down the block's edge is always black. It used to carry the
+// owner's line ink, split per owner on a shared block, but two slots share a
+// line ink (red and orange are both R, green and lime both G, blue and pink
+// both B), so it could not tell those members apart — and since D38 the fill
+// segments say who shares a block. A black edge also survives the paper theme
+// and any tile unchanged.
+function stripeHtml() {
+  return `<span class="of-stripe"></span>`;
 }
 
 // A shared event shows every owner's fill, side by side in the order the
@@ -221,8 +227,12 @@ function blockPattern(owners) {
 // letter says who outright.
 function initialsHtml(owners) {
   if (!owners.length) return "";
+  // The mark wears the member's own tile — the same one the legend chip and
+  // the block wear — not the slot's solid line ink, which two slots can
+  // share. Black letter on every tile (D37), 1px black edge so it is still a
+  // mark on a block of the same fill.
   return owners
-    .map((m) => `<span class="of-mark" style="background:${accent(m).line};color:${accent(m).ink}">${esc(m.letter || "·")}</span>`)
+    .map((m) => `<span class="of-mark" style="${paint(m)}">${esc(m.letter || "·")}</span>`)
     .join("");
 }
 
@@ -307,7 +317,7 @@ export function clipClasses(top, bottom, hours) {
 }
 
 // Greedy interval packing: concurrent events split the column between them.
-// Routine is packed separately in the gutter, which is what usually keeps
+// Routine is packed separately, into narrow bars, which is what usually keeps
 // this down to a single full-width block on an ordinary weekday.
 //
 // `top`/`bottom` are hours, and they have to stay hours all the way through —
@@ -388,7 +398,7 @@ function bandsHtml(bands, dayCount, members) {
         <div class="of-band ${blockPattern(owners)}"
              style="${blockPaint(owners)};grid-column:${band.first + 1} / span ${columns};grid-row:${lane + 1}">
           ${fillsHtml(owners)}
-          ${stripeHtml(owners)}
+          ${stripeHtml()}
           ${initialsHtml(owners)}
           <span class="of-band-name">${esc(band.title || band.summary || "")}</span>
         </div>`;
@@ -397,7 +407,7 @@ function bandsHtml(bands, dayCount, members) {
 }
 
 function laneHtml(day, opts) {
-  const { members, hours, useGutter, data } = opts;
+  const { members, hours, narrowRoutine, data } = opts;
   const all = (day.events || []).map((event) => {
     const clamped = clampToDay(event, day.date);
     return clamped ? { event, ...clamped } : null;
@@ -407,31 +417,33 @@ function laneHtml(day, opts) {
   const before = all.filter((item) => item.bottom <= hours.start);
   const after = all.filter((item) => item.top >= hours.end);
 
-  const routine = useGutter ? inside.filter((item) => item.event.routine) : [];
-  const appointments = useGutter ? inside.filter((item) => !item.event.routine) : inside;
+  const routine = narrowRoutine ? inside.filter((item) => item.event.routine) : [];
+  const appointments = narrowRoutine ? inside.filter((item) => !item.event.routine) : inside;
 
-  // Every member with routine today gets a fixed slot, in roster order, so
-  // the gutter reads as the same shape of "who is tied up" every day.
-  const slots = [...members.keys()].filter((id) =>
-    routine.some((item) => (item.event.members || []).includes(id)));
-  const gutterWidth = slots.length * GUTTER_PX;
-
-  const bars = routine.map((item) => {
+  // Routine bars are packed among themselves, by time, into fixed-width
+  // columns down the left of the lane. Two overlapping routines sit side by
+  // side; one that starts after another ends takes the first column again.
+  const bars = packColumns(routine);
+  const barsHtml = bars.map((item) => {
     const owners = ownersOf(item.event, members);
-    const indices = (item.event.members || [])
-      .map((id) => slots.indexOf(id))
-      .filter((i) => i >= 0);
-    const from = indices.length ? Math.min(...indices) : 0;
-    const to = indices.length ? Math.max(...indices) : 0;
     const { top, height } = pctSpan(item.top, item.bottom, hours);
     return `
       <div class="of-bar ${blockPattern(owners)} ${clipClasses(item.top, item.bottom, hours)}"
            style="${blockPaint(owners)};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
-                  left:${from * GUTTER_PX}px;width:${(to - from + 1) * GUTTER_PX - 1}px">
+                  left:${item.column * BAR_PX}px;width:${BAR_PX - 1}px">
         ${fillsHtml(owners)}
         <span class="of-bar-name">${esc(item.event.title || item.event.summary || "")}</span>
+        ${owners.length ? `<span class="of-bar-marks">${initialsHtml(owners)}</span>` : ""}
       </div>`;
   }).join("");
+
+  // How far an appointment has to move right to clear the routine bars that
+  // overlap it in time: past the outermost of them. Outside routine hours
+  // that is nothing at all, which is the point of not having a gutter.
+  const indentFor = (item) => {
+    const overlapping = bars.filter((bar) => bar.top < item.bottom && bar.bottom > item.top);
+    return overlapping.length ? (Math.max(...overlapping.map((bar) => bar.column)) + 1) * BAR_PX : 0;
+  };
 
   // Packed in hours; pctSpan runs per block below. Handing pctSpan's output
   // to the packer is what broke this before — see packColumns.
@@ -441,9 +453,14 @@ function laneHtml(day, opts) {
     const event = item.event;
     const owners = ownersOf(event, members);
     const columns = item.columns;
-    const width = 100 / columns;
-    const left = item.column * width;
+    const share = item.column / columns;
+    const indent = indentFor(item);
     const { top, height } = pctSpan(item.top, item.bottom, hours);
+    // The block's slice of what is left beside the routine bars: the lane
+    // minus the indent, split by the cluster's column count. Mixed units, so
+    // it stays a calc() — the indent is pixels, the split is a percentage.
+    const left = `calc(${indent}px + ${(share * 100).toFixed(3)}% - ${(share * indent).toFixed(2)}px + 1px)`;
+    const width = `calc(${(100 / columns).toFixed(3)}% - ${(indent / columns).toFixed(2)}px - 2px)`;
     // Everything is emitted; the CSS drops the meta line, then the title, as
     // the block gets shorter. Wrapping is a CSS decision too, by height: a
     // narrow column in a three-way cluster gets a word broken over its lines
@@ -451,9 +468,9 @@ function laneHtml(day, opts) {
     return `
       <div class="of-ev ${blockPattern(owners)} can-wrap ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""} ${clipClasses(item.top, item.bottom, hours)}"
            style="${blockPaint(owners)};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
-                  left:calc(${left}% + 1px);width:calc(${width}% - 2px)">
+                  left:${left};width:${width}">
         ${fillsHtml(owners)}
-        ${stripeHtml(owners)}
+        ${stripeHtml()}
         <span class="of-name">${esc(event.title || event.summary || "")}</span>
         <span class="of-meta"><span class="of-time">${esc(fmtHm(event.start))}</span></span>
         ${data.show_location && event.location
@@ -473,8 +490,8 @@ function laneHtml(day, opts) {
 
   return `
     <div class="${classes.join(" ")}">
-      ${gutterWidth ? `<div class="of-gutter" style="width:${gutterWidth}px">${bars}</div>` : ""}
       <div class="of-main">
+        ${barsHtml}
         ${blocks}
         ${showNow ? `<div class="tt-now" style="top:${nowPct.toFixed(2)}%"></div>` : ""}
         ${edgeHtml(before, members, "up")}
@@ -488,12 +505,12 @@ function laneHtml(day, opts) {
 function edgeHtml(items, members, direction) {
   if (!items.length) return "";
   const owners = ownersOf(items[0].event, members);
-  const colour = owners.length ? accent(owners[0]).line : UNOWNED.line;
-  const glyph = direction === "up" ? "▲" : "▼";
+  // A border-drawn triangle, not a ▲/▼ glyph: the two glyphs are different
+  // sizes in most faces, and a border triangle is the same shape either way up.
   return `
     <div class="of-edge is-${direction}">
       <span class="of-edge-chip">
-        <span class="of-edge-dot" style="background:${colour}"></span>${glyph}${items.length}
+        <span class="of-edge-dot" style="${paint(owners[0])}"></span><span class="of-edge-tri"></span>${items.length}
       </span>
     </div>`;
 }
@@ -569,13 +586,18 @@ function styles(span) {
       min-height: 0;
     }
 
-    /* Legend. Patterns are the redundancy that keeps members apart on a
-       black-and-white panel, where every accent slot collapses to black. */
+    /* Legend, in the title bar between the name and the date range, so it
+       costs the grid no height. Patterns are the redundancy that keeps
+       members apart on a black-and-white panel. */
     .of-legend {
-      display: flex; flex-wrap: wrap; align-items: center;
+      display: flex; flex-wrap: nowrap; align-items: center;
       gap: var(--space-3);
-      padding-bottom: var(--space-1);
+      margin-left: var(--space-4);
+      flex: 1 1 auto; min-width: 0; overflow: hidden;
     }
+    /* The legend is what gives way, never the widget name or the range. */
+    .w-title h3 { flex: 0 0 auto; }
+    .w-title .w-title-meta { flex: 0 0 auto; white-space: nowrap; }
     .of-key { display: inline-flex; align-items: center; gap: 0.4em; }
     .of-key-chip {
       width: 1.35em; height: 1.35em;
@@ -623,10 +645,6 @@ function styles(span) {
        is dither, a tile is painted verbatim. */
     .of-lane.is-weekend {
       background-image: ${WEEKEND.url}; background-size: ${WEEKEND.size};
-    }
-    .of-gutter {
-      position: relative; flex: 0 0 auto;
-      border-right: 1px solid #000;
     }
     .of-main { position: relative; flex: 1 1 auto; min-width: 0; }
     /* One rule per hour so the eye can sweep a time across all the
@@ -678,7 +696,7 @@ function styles(span) {
       container-name: ofev;
     }
     /* No opacity on routine blocks: 75% black text is grey, and grey dithers. */
-    .of-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; }
+    .of-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: #000; }
     /* Shared events: one fill segment per owner, under the text (z-index -1
        inside the block's own stacking context), each with its own tile and
        pattern, in stripe order. */
@@ -715,18 +733,17 @@ function styles(span) {
        on the cut edge and points the way the event continues. Drawn with
        borders rather than a glyph so it stays a crisp solid shape on e-ink at
        any size, and centred so it never lands on the title or the corner
-       marks. */
+       marks. Black, not the owner's line ink: that ink is the fill's own
+       colour, so a yellow triangle on Lea's yellow tile simply vanished. */
     .of-ev.clip-top::before,
     .of-ev.clip-bottom::after,
     .of-bar.clip-top::before,
     .of-bar.clip-bottom::after {
       content: "";
       position: absolute;
-      left: 50%;
-      margin-left: -5px;
-      width: 0; height: 0;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
+      left: calc(50% - 5px);
+      width: 10px; height: 6px;
+      background-repeat: no-repeat;
       z-index: 2;
     }
     /* No padding to clear the triangle: reserving a band for it costs the
@@ -734,24 +751,17 @@ function styles(span) {
        horizontally centred while the time is left-aligned and the owner marks
        are right-aligned, so in practice it lands in the gap between them. */
     .of-ev.clip-top::before,
-    .of-bar.clip-top::before {
-      top: 1px;
-      border-bottom: 6px solid var(--of-line);
-    }
+    .of-bar.clip-top::before { top: 1px; background-image: ${tri("up", 10, 6)}; }
     .of-ev.clip-bottom::after,
-    .of-bar.clip-bottom::after {
-      bottom: 1px;
-      border-top: 6px solid var(--of-line);
-    }
-    /* The gutter is only ~13px wide, so its triangle hugs the left instead of
-       trying to centre in a space narrower than itself. */
+    .of-bar.clip-bottom::after { bottom: 1px; background-image: ${tri("down", 10, 6)}; }
+    /* A bar is only one mark wide, so its triangle is smaller and hugs the
+       left instead of trying to centre in a space narrower than itself. */
     .of-bar.clip-top::before,
     .of-bar.clip-bottom::after {
-      left: 2px;
-      margin-left: 0;
-      border-left-width: 3px;
-      border-right-width: 3px;
+      left: 2px; width: 6px; height: 6px;
     }
+    .of-bar.clip-top::before { background-image: ${tri("up", 6, 6)}; }
+    .of-bar.clip-bottom::after { background-image: ${tri("down", 6, 6)}; }
 
     /* Owner marks, bottom-right. Absolute, so they take nothing from the
        title's width and nothing from the layout of the lines above them. */
@@ -769,31 +779,43 @@ function styles(span) {
       width: 1.3em; height: 1.3em; flex: 0 0 auto;
       border-radius: var(--radius-0, 2px);
       font-size: calc(var(--fs-caption) * 1.1); font-weight: var(--fw-black);
-      color: var(--on-accent);
+      color: #000;
+      background-color: #fff;
+      background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       box-shadow: inset 0 0 0 1px #000;
     }
 
-    /* Routine bars: vertical labels, so a long word like "Fussballtraining"
-       costs height (which the bar has) instead of width (which it doesn't). */
+    /* Routine bars: narrow, down the left of the lane, only over their own
+       hours. Vertical labels, so a long word like "Fussballtraining" costs
+       height (which the bar has) instead of width (which it doesn't). */
     .of-bar {
       position: absolute; overflow: hidden; isolation: isolate;
       background-color: #fff;
       background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
       color: var(--of-text, #000);
       outline: 1px solid #000; outline-offset: -1px;
-      border-left: 3px solid var(--of-line);
-      display: flex; justify-content: center; padding-top: 2px;
+      /* No stripe: the bar is one mark wide, and the marks at its foot take
+         the whole width, so an edge would only steal from them. */
+      display: flex; flex-direction: column; align-items: center;
+      padding-top: 2px;
       container-type: size;
       container-name: ofbar;
     }
     .of-bar-name {
+      flex: 0 1 auto; min-height: 0;
       writing-mode: vertical-rl; text-orientation: mixed;
-      font-size: calc(var(--fs-caption) * 0.8); font-weight: var(--fw-black);
+      font-size: var(--fs-caption); font-weight: var(--fw-black);
       letter-spacing: var(--ls-label);
       color: inherit;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      max-height: 100%;
     }
+    /* Owner marks at the foot of the bar, stacked, each as wide as the bar. */
+    .of-bar-marks {
+      flex: 0 0 auto; margin-top: auto;
+      display: flex; flex-direction: column;
+      width: 100%;
+    }
+    .of-bar-marks .of-mark { width: 100%; border-radius: 0; }
 
     /* All-day / multi-day bars across the top. */
     .of-bands { display: grid; gap: 2px; padding-bottom: var(--space-1); }
@@ -829,7 +851,16 @@ function styles(span) {
       color: var(--text-muted);
       font-feature-settings: "tnum";
     }
-    .of-edge-dot { width: 0.5em; height: 0.5em; border-radius: var(--radius-0, 2px); }
+    /* The same pixel-exact polygon either way up (see tri()). */
+    .of-edge-tri { width: 12px; height: 11px; background-repeat: no-repeat; }
+    .of-edge.is-up .of-edge-tri { background-image: ${tri("up", 12, 11)}; }
+    .of-edge.is-down .of-edge-tri { background-image: ${tri("down", 12, 11)}; }
+    .of-edge-dot {
+      width: 0.5em; height: 0.5em; border-radius: var(--radius-0, 2px);
+      background-color: #fff;
+      background-image: var(--of-fill); background-size: var(--of-fill-size, 2px 2px);
+      box-shadow: inset 0 0 0 1px #000;
+    }
 
     /* Fill patterns. Redundant with colour on a Spectra panel, and the only
        thing telling two people apart on a black-and-white one. */
@@ -908,7 +939,7 @@ function styles(span) {
     /* A tile narrower than about 3.5em (a three-way cluster in a
        seven-day week) cannot wrap into anything readable: one or two letters
        a line. It runs the title down the tile instead, the way the routine
-       gutter does (D16), stopping above the marks; the time goes, its position
+       bars do (D16), stopping above the marks; the time goes, its position
        on the axis says roughly when. Placed after the wrap rules so it wins. */
     @container ofev (max-width: 3.5em) {
       .of-ev { display: block; }
@@ -928,6 +959,10 @@ function styles(span) {
        label would only be a smear of glyph tops. */
     @container ofbar (max-height: 42px) {
       .of-bar-name { display: none; }
+    }
+    /* Shorter than one mark: the bar is a coloured tick, nothing more. */
+    @container ofbar (max-height: 1.5em) {
+      .of-bar-marks { display: none; }
     }
 
     /* md is where this gets tight, and it is tight in the one direction that

@@ -14,17 +14,18 @@ Repo root is `Calendar/` (this file's directory). The plugins live under `Outloo
 | `OutlookWidget/outlook_core/` | `data` | Microsoft Graph sign-in, tokens, calendar list, caching, the family config |
 | `OutlookWidget/outlook_week/` | `widget` | Next N days, grouped by day |
 | `OutlookWidget/outlook_family/` | `widget` | The family timetable: a column per day, colour/pattern per person |
+| `OutlookWidget/outlook_month/` | `widget` | The family wall calendar: a row per week from the current one, a chip per event |
 
-`OutlookWidget/DESIGN.md` is the design record for the family widget: what the panel does now, and
-the numbered decisions (D1-D33) behind it. Read it before changing `outlook_family/client.js` or the
-family rules — most of what looks arbitrary in there is load-bearing, and the reason is written down.
+`OutlookWidget/DESIGN.md` is the design record for the family widgets: what the panels do now, and
+the numbered decisions behind them. Read it before changing `outlook_family/client.js`,
+`outlook_month/client.js` or the family rules — most of what looks arbitrary in there is load-bearing, and the reason is written down.
 
 **The folder name is the plugin id** — there is no `id` field in `plugin.json`. Everything else
 under `OutlookWidget/` is scaffolding: `devserver.py`, `conftest.py`, `_devsupport.py`, `_tests/`,
 `_docs/` (a copy of the Tesserae docs; `_docs/widgets.md` is the authoritative widget contract),
 and `ruff.toml`, which mirrors the clone's lint/format settings.
 
-Status: `outlook_core` and `outlook_family` are complete and tested. `outlook_week/client.js` is
+Status: `outlook_core`, `outlook_family` and `outlook_month` are complete and tested. `outlook_week/client.js` is
 still a placeholder list — its real per-size layout is a separate task.
 
 ## Working agreements
@@ -131,7 +132,7 @@ Authoritative: `_docs/widgets.md` and `_docs/widget-design-system.md`. Schema:
 
 ## Publishing
 
-Community catalog, as a bundle: `id: "outlook"`, `folders: ["outlook_core", "outlook_family"]`.
+Community catalog, as a bundle: `id: "outlook"`, `folders: ["outlook_core", "outlook_family", "outlook_month"]`.
 `outlook_week` is deliberately out until its `client.js` is a real render rather than the
 placeholder debug list; adding it is one word in `BUNDLE_FOLDERS` plus the catalog entry.
 

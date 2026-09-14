@@ -16,8 +16,8 @@ folders into `/data/marketplace/` by hand.
     https://raw.githubusercontent.com/mjeanrichard/OutlookCalendar/catalog/widgets.json
 
 Then **Settings → Widgets → Browse** lists the bundle; Install downloads the
-release asset, verifies the sha256, validates both `plugin.json` files against
-the host schema, and drops `outlook_core/` + `outlook_family/` into
+release asset, verifies the sha256, validates every `plugin.json` against
+the host schema, and drops `outlook_core/`, `outlook_family/` and `outlook_month/` into
 `<data_root>/marketplace/`. A restart is always required afterwards.
 
 Note this *replaces* the official catalog rather than adding to it — the host

@@ -3,7 +3,7 @@
   "name": "Outlook, Family Week",
   "version": "0.0.0-dev",
   "kind": "widget",
-  "description": "The next few days as a family timetable: one column per day, every appointment tinted, patterned and initialled with whoever it belongs to. Who owns what is configured once on the Outlook Core page, from Outlook categories, title prefixes like 'L: Klavier', a word in the title, or the calendar an event came from. Recurring commitments such as school and office hours move to a narrow gutter so appointment titles keep the width.",
+  "description": "The next few days as a family timetable: one column per day, every appointment tinted, patterned and initialled with whoever it belongs to. Who owns what is configured once on the Outlook Core page, from Outlook categories, title prefixes like 'L: Klavier', a word in the title, or the calendar an event came from. Recurring commitments such as school and office hours are drawn as narrow bars over their own hours, so appointment titles keep the width.",
   "icon": "ph-users-three",
   "supports": { "sizes": ["md", "lg"] },
   "cell_options": [
@@ -64,9 +64,9 @@
     {
       "name": "routine_gutter",
       "type": "boolean",
-      "label": "Routine in a side gutter",
+      "label": "Routine as narrow bars",
       "default": true,
-      "help": "Draws events a rule marked as routine — school, office hours — as thin labelled bars down the left of each day, leaving the rest of the column for appointments. Turn off to draw them as ordinary blocks."
+      "help": "Draws events a rule marked as routine — school, office hours — as thin vertically-labelled bars at the left of the day, over their own hours only. Appointments beside them move right to clear them; appointments after them get the whole column. Turn off to draw routine as ordinary blocks."
     },
     {
       "name": "show_location",

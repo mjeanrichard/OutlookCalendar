@@ -3,3 +3,6 @@
 dist/
 publish/
 plugin.schema.json
+
+# Rendered patch-test cards (tools/patch_test.py output).
+tools/out/

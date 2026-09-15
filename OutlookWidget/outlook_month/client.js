@@ -167,14 +167,17 @@ function stripeHtml() {
   return `<span class="om-stripe"></span>`;
 }
 
-// A shared event shows every owner's fill, side by side under the text: one
-// segment per owner, each with its own tile and pattern, and the chip's own
-// fill switched off (outlook_family D38).
+// A shared event shows every owner's fill under the text: one segment per
+// owner, each with its own tile and pattern, and the chip's own fill switched
+// off (outlook_family D38). Stacked top to bottom rather than side by side,
+// unlike the timetable: a chip is one line tall and wide, so a vertical
+// seam cut the title in two colours mid-word, while a horizontal one runs
+// along it.
 function fillsHtml(owners) {
   if (owners.length < 2) return "";
   const step = 100 / owners.length;
   return owners
-    .map((m, i) => `<span class="om-fillseg ${patternClass([m])}" style="${paint(m)};left:${(i * step).toFixed(2)}%;width:${step.toFixed(2)}%"></span>`)
+    .map((m, i) => `<span class="om-fillseg ${patternClass([m])}" style="${paint(m)};top:${(i * step).toFixed(2)}%;height:${step.toFixed(2)}%"></span>`)
     .join("");
 }
 
@@ -389,9 +392,12 @@ function styles() {
       --on-accent: #ffffff;
       --surface-sunken: #ffffff;
       /* The three heights the grid is built from, in the cell's fluid type
-         size: the day number's line, a band, and the gap between rows. */
+         size: the day number's line, a band, and the gap between rows. A
+         band is exactly one chip tall: 1.3 lines of the label size (0.8em),
+         written out here because an em inside a custom property resolves
+         where it is used, and the band lanes are sized from the cell. */
       --om-num: 1.15em;
-      --om-band: 1.15em;
+      --om-band: 1.04em;
       --om-gap: 0.15em;
     }
 
@@ -499,7 +505,7 @@ function styles() {
     }
     .om-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: #000; }
     .om-fillseg {
-      position: absolute; top: 0; bottom: 0; z-index: -1;
+      position: absolute; left: 0; right: 0; z-index: -1;
       background-color: #fff;
       background-image: var(--om-fill); background-size: var(--om-fill-size, 2px 2px);
     }
@@ -511,7 +517,9 @@ function styles() {
     /* A day with room lets a long title take a second line. */
     .om-chip.can-wrap .om-name {
       white-space: normal; word-break: break-word; hyphens: auto;
-      padding: 0.1em 0;
+      /* One line plus this padding is exactly the chip's min-height, so a
+         short title on a quiet day is the same height as on a busy one. */
+      padding: 0.075em 0;
       display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
       -webkit-box-orient: vertical;
     }
@@ -548,7 +556,8 @@ function styles() {
       display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
       row-gap: var(--om-gap); z-index: 1; pointer-events: none;
     }
-    .om-band { margin: 0 5px; min-height: 0; height: var(--om-band); }
+    /* A band fills its lane row, which is one chip tall (see --om-band). */
+    .om-band { margin: 0 5px; min-height: 0; height: auto; align-self: stretch; }
 
     /* Fill patterns: redundant with colour on a Spectra panel, and the only
        thing telling two people apart on a black-and-white one. The stroke is

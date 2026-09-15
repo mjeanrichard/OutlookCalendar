@@ -436,6 +436,9 @@ break the moment the base size changes.
 
 **M7 — Shared events span nothing.**
 In the grid a shared event is one chip in one cell with a split fill and two marks (D38). The
+split is stacked — one horizontal band per owner — where the timetable's is side by side: a chip
+is one line tall and wide, so a vertical seam cut the title into two colours mid-word, while a
+horizontal one runs along it, and on a two-line chip each owner simply gets a line. The
 Familienplaner layout in `tools/month_mock.html` — a column per person — is the one where a shared
 event spans two columns; it was mocked and not chosen, because its title budget only pays off at
 `lg` and it has no `md` form at all.

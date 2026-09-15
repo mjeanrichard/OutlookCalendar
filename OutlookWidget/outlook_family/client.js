@@ -225,14 +225,21 @@ function blockPattern(owners) {
 // Every owner's initial, on every block that has room for it. Colour alone
 // asks you to remember five hues and go back to the legend to decode them; the
 // letter says who outright.
+// A member without a letter gets no mark at all — the fill is their mark —
+// rather than a placeholder dot.
+function lettered(owners) {
+  return owners.filter((m) => m.letter);
+}
+
 function initialsHtml(owners) {
+  owners = lettered(owners);
   if (!owners.length) return "";
   // The mark wears the member's own tile — the same one the legend chip and
   // the block wear — not the slot's solid line ink, which two slots can
   // share. Black letter on every tile (D37), 1px black edge so it is still a
   // mark on a block of the same fill.
   return owners
-    .map((m) => `<span class="of-mark" style="${paint(m)}">${esc(m.letter || "·")}</span>`)
+    .map((m) => `<span class="of-mark" style="${paint(m)}">${esc(m.letter)}</span>`)
     .join("");
 }
 
@@ -249,7 +256,7 @@ function legendHtml(roster) {
   const chips = roster
     .map((m) => `
       <span class="of-key">
-        <span class="of-key-chip ${patternClass([m])}" style="${paint(m)};color:${accent(m).text}">${esc(m.letter || "·")}</span>
+        <span class="of-key-chip ${patternClass([m])}" style="${paint(m)};color:${accent(m).text}">${esc(m.letter || "")}</span>
         <span class="of-key-name">${esc(m.name || "")}</span>
       </span>`)
     .join("");
@@ -427,13 +434,16 @@ function laneHtml(day, opts) {
   const barsHtml = bars.map((item) => {
     const owners = ownersOf(item.event, members);
     const { top, height } = pctSpan(item.top, item.bottom, hours);
+    // No fill and no pattern on a bar: it is white with a black edge, and the
+    // marks at its foot are what say whose it is. A coloured bar beside a
+    // coloured block was two fields fighting for the eye, and routine is the
+    // one that should lose.
     return `
-      <div class="of-bar ${blockPattern(owners)} ${clipClasses(item.top, item.bottom, hours)}"
-           style="${blockPaint(owners)};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
+      <div class="of-bar ${clipClasses(item.top, item.bottom, hours)}"
+           style="${blockPaint(owners)};--of-fill:none;top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
                   left:${item.column * BAR_PX}px;width:${BAR_PX - 1}px">
-        ${fillsHtml(owners)}
         <span class="of-bar-name">${esc(item.event.title || item.event.summary || "")}</span>
-        ${owners.length ? `<span class="of-bar-marks">${initialsHtml(owners)}</span>` : ""}
+        ${lettered(owners).length ? `<span class="of-bar-marks">${initialsHtml(owners)}</span>` : ""}
       </div>`;
   }).join("");
 
@@ -466,7 +476,7 @@ function laneHtml(day, opts) {
     // narrow column in a three-way cluster gets a word broken over its lines
     // rather than one letter and an ellipsis.
     return `
-      <div class="of-ev ${blockPattern(owners)} can-wrap ${event.routine ? "is-routine" : ""} ${owners.length ? "has-marks" : ""} ${clipClasses(item.top, item.bottom, hours)}"
+      <div class="of-ev ${blockPattern(owners)} can-wrap ${event.routine ? "is-routine" : ""} ${lettered(owners).length ? "has-marks" : ""} ${clipClasses(item.top, item.bottom, hours)}"
            style="${blockPaint(owners)};top:${top.toFixed(2)}%;height:${height.toFixed(2)}%;
                   left:${left};width:${width}">
         ${fillsHtml(owners)}

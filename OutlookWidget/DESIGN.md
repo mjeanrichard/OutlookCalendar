@@ -36,8 +36,9 @@ event lasting 24 hours or more.
 **Routine bars** are events a rule marked *routine* — school, office hours — drawn as bars one
 owner mark wide (29px) at the left of the day, over their own hours only, with the label set
 vertically at caption size (a narrower bar with smaller type was tried first and read as a smear of
-glyph sides). The owners' marks sit at the foot of the bar, stacked when there are several, each
-the full width of the bar — which is why a bar has no stripe of its own. A bar shorter than one
+glyph sides). A bar has no fill and no pattern: white, black edge, and the owners' marks at its
+foot, stacked when there are several, each the full width of the bar — which is why a bar has no
+stripe of its own either. Filled bars were tried and read as a second field fighting the blocks. A bar shorter than one
 mark drops the marks; shorter than about two lines, the label too. Concurrent
 routines pack side by side; one that starts after another ends takes the first column again.
 

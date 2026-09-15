@@ -199,10 +199,13 @@ function chipPattern(owners) {
 // verbatim. Black letter on every tile (D37), with a 1px black edge so it is
 // a mark on a chip of the same fill too.
 function marksHtml(owners) {
-  const marks = owners.length
-    ? owners.map((m) => `<span class="om-mark" style="${paint(m)}">${esc(m.letter || "·")}</span>`).join("")
-    : `<span class="om-mark is-none"></span>`;
-  return `<span class="om-marks">${marks}</span>`;
+  // A member without a letter gets no mark at all — the fill is their mark —
+  // rather than a placeholder dot. An unassigned event keeps its empty
+  // square, which is the whole chip at md.
+  if (!owners.length) return `<span class="om-marks"><span class="om-mark is-none"></span></span>`;
+  const lettered = owners.filter((m) => m.letter);
+  if (!lettered.length) return "";
+  return `<span class="om-marks">${lettered.map((m) => `<span class="om-mark" style="${paint(m)}">${esc(m.letter)}</span>`).join("")}</span>`;
 }
 
 function legendHtml(roster) {
@@ -210,7 +213,7 @@ function legendHtml(roster) {
   const chips = roster
     .map((m) => `
       <span class="om-key">
-        <span class="om-key-chip ${patternClass([m])}" style="${paint(m)};color:${accent(m).text}">${esc(m.letter || "·")}</span>
+        <span class="om-key-chip ${patternClass([m])}" style="${paint(m)};color:${accent(m).text}">${esc(m.letter || "")}</span>
         <span class="om-key-name">${esc(m.name || "")}</span>
       </span>`)
     .join("");

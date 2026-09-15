@@ -122,7 +122,6 @@ def test_the_panel_gets_everything_it_needs_to_paint_a_person(
     assert {m["id"] for m in data["members"]} == {"papa", "mama", "lea"}
     assert data["weeks"] == 4
     assert data["week_start"] == "monday"
-    assert data["past_days"] == "hollow"
     # Exactly one today, and it is never behind a past day.
     flags = [(d["is_today"], d["is_past"]) for d in data["days"]]
     assert flags.count((True, False)) == 1

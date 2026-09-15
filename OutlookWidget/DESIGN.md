@@ -394,7 +394,7 @@ becomes a `+n`.
 in a lane strip under the day numbers, cut per week row. A cell reserves room only for the lanes
 that cross it, so a weekend trip costs Monday nothing.
 
-**Past days** keep their chips but lose the fill: outline, stripe and initial only.
+**Past days** are drawn like any other day; only the number drops to regular weight.
 
 **md** (640×400) keeps the grid and drops the titles: each chip collapses to its owner marks, laid
 out in a row, and the legend goes because the marks are the legend.
@@ -423,10 +423,12 @@ School and office hours on every weekday of four weeks say nothing and would tak
 lines of every cell. The narrow-bar trick (D16) needs a time axis to sit beside. An option brings them
 back as ordinary chips for anyone who wants them.
 
-**M5 — Past days go hollow.**
-The panel has no grey (D35). Dropping the fill but keeping the outline, stripe and initial reads as
-"done" from across the room and still says whose it was. Painting them as usual is an option, for
-anyone who finds the hollow chips too close to an unassigned event's white.
+**M5 — Past days are painted like every other day.**
+They were hollow at first — outline, stripe and initial, no fill — on the argument that the panel
+has no grey (D35) and a fill-less chip reads as "done". On the panel it read as a chip that had
+lost its colour: the first event of the week looked broken while the same event a week later was
+fine. With at most six past days on the panel there is little to gain from marking them, so the
+treatment and its option went; the today chip is enough.
 
 **M6 — Overflow is measured, not predicted.**
 The chips are laid out by the browser and then trimmed: any chip whose bottom edge falls past its

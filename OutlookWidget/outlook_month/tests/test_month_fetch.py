@@ -184,17 +184,6 @@ def test_days_know_whether_they_are_over_today_or_ahead(
     assert not any(d["is_past"] for d in data["days"][7:])
 
 
-def test_the_past_days_choice_reaches_the_client(
-    app: Flask, month: Any, now: datetime, graph: Any, family: Any
-) -> None:
-    graph.add(VIEW_URL, {"value": []})
-
-    with app.test_request_context():
-        assert _fetch(month)["past_days"] == "hollow"
-        assert _fetch(month, past_days="painted")["past_days"] == "painted"
-        assert _fetch(month, past_days="invisible")["past_days"] == "hollow"
-
-
 def test_every_day_gets_a_cell_even_when_nothing_is_on(
     app: Flask, month: Any, now: datetime, graph: Any, family: Any
 ) -> None:

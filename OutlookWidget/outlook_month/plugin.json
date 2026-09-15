@@ -43,17 +43,6 @@
       ]
     },
     {
-      "name": "past_days",
-      "type": "select",
-      "label": "Days already over",
-      "default": "hollow",
-      "choices": [
-        { "value": "hollow", "label": "Hollow chips (outline, stripe and initial only)" },
-        { "value": "painted", "label": "Painted like every other day" }
-      ],
-      "help": "Only the current week can hold days that are over. Hollow chips read as done without needing a grey the panel cannot draw."
-    },
-    {
       "name": "show_routine",
       "type": "boolean",
       "label": "Show routine",
@@ -84,7 +73,6 @@
       "stale": false,
       "weeks": 4,
       "week_start": "monday",
-      "past_days": "hollow",
       "start": "2026-08-17",
       "end": "2026-09-14",
       "members": [

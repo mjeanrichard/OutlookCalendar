@@ -13,8 +13,8 @@
  *   2. A day with room lets a long title wrap; a busy day keeps one line per
  *      chip, and what does not fit becomes a "+n" rather than a row of
  *      clipped letter-tops.
- *   3. Days already over lose their fill and keep their outline, stripe and
- *      initial — done, but not gone, and no grey for the panel to dither.
+ *   3. Days already over are drawn like any other — at most six of them are
+ *      on the panel, and a chip without its colour reads as a mistake.
  *
  * Ownership is resolved server-side by outlook_core's family rules, so every
  * event arrives with `members` and an already-stripped `title`.
@@ -57,14 +57,13 @@ export default function render(shadow, ctx) {
     return;
   }
 
-  const hollowPast = data.past_days !== "painted";
   const weeks = [];
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
   const heads = weeks[0]
     .map((day) => `<div class="om-dow">${esc(DOW[dayOfWeek(day.date)] || "")}</div>`)
     .join("");
   const rows = weeks
-    .map((week, w) => weekHtml(week, w * 7, data.bands || [], members, hollowPast))
+    .map((week, w) => weekHtml(week, w * 7, data.bands || [], members))
     .join("");
 
   // The zoom-locked .w-title rather than the .cal-head hero: that header is
@@ -161,8 +160,7 @@ function patternClass(owners) {
 // The stripe down the chip's edge is always black. It used to carry the
 // owner's line ink, split per owner on a shared chip, but two slots can share
 // a line ink (see marksHtml) and the fill and marks already say whose the
-// chip is; a black edge is what survives on a hollow past-day chip and on a
-// black-and-white panel alike.
+// chip is; a black edge is what survives on a black-and-white panel.
 function stripeHtml() {
   return `<span class="om-stripe"></span>`;
 }
@@ -244,7 +242,7 @@ function chipHtml(event, members, canWrap) {
 // packed into lanes. Each cell reserves room under its number for the lanes
 // that actually cross it — down to the deepest one that does — so a weekend
 // trip costs Monday nothing and its chips start at the top.
-function weekHtml(week, offset, bands, members, hollowPast) {
+function weekHtml(week, offset, bands, members) {
   const laneEnds = [];
   const placed = [];
   for (const band of bands.slice().sort((a, b) => a.first - b.first)) {
@@ -267,7 +265,7 @@ function weekHtml(week, offset, bands, members, hollowPast) {
     const classes = ["om-day"];
     if (day.is_today) classes.push("is-today");
     if (day.is_weekend) classes.push("is-weekend");
-    if (day.is_past && hollowPast) classes.push("is-past");
+    if (day.is_past) classes.push("is-past");
     const events = Array.isArray(day.events) ? day.events : [];
     const canWrap = events.length <= WRAP_UP_TO;
     const chips = events.map((ev) => chipHtml(ev, members, canWrap)).join("");
@@ -279,7 +277,7 @@ function weekHtml(week, offset, bands, members, hollowPast) {
       : esc(String(day.day ?? ""));
     return `
       <div class="${classes.join(" ")}">
-        <div class="om-num">${num}</div>
+        <div class="om-num"><span class="om-num-text">${num}</span></div>
         <div class="om-bandroom" style="height:calc(${depth} * (var(--om-band) + var(--om-gap)))"></div>
         <div class="${listClass}">${chips}</div>
       </div>`;
@@ -437,51 +435,66 @@ function styles() {
       display: flex; flex-direction: column;
       border: 1px solid #000;
     }
-    .om-dows { display: flex; flex: 0 0 auto; border-bottom: 1px solid #000; }
+    /* Header and week rows are grids of seven equal tracks, and so is the
+       band layer over each week, so a band's edges land exactly on the
+       cell's. (Flex cells with borders come out a pixel apart.) Every cell
+       has a left border — the first one transparent — so their content
+       boxes are identical and chips line up column to column. */
+    .om-dows { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+               flex: 0 0 auto; border-bottom: 1px solid #000; }
     .om-dow {
-      flex: 1 1 0; min-width: 0;
+      min-width: 0;
       font-size: var(--fs-caption); font-weight: var(--fw-black);
       letter-spacing: var(--ls-label);
       text-transform: var(--label-transform, uppercase);
       text-align: center; padding: 2px 0 3px;
       border-left: 1px solid #000;
     }
-    .om-dow:first-child { border-left: 0; }
+    .om-dow:first-child { border-left-color: transparent; }
     .om-week {
       flex: 1 1 0; min-height: 0;
-      display: flex; position: relative;
+      display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+      position: relative;
       border-top: 1px solid #000;
     }
     .om-dows + .om-week { border-top: 0; }
     .om-day {
-      flex: 1 1 0; min-width: 0;
+      min-width: 0; min-height: 0; box-sizing: border-box;
       display: flex; flex-direction: column;
       border-left: 1px solid #000;
     }
-    .om-day:first-child { border-left: 0; }
+    .om-day:first-child { border-left-color: transparent; }
     /* The weekend ground is a 4x4 tile (red at 12.5%), not a wash. */
     .om-day.is-weekend {
       background-image: ${WEEKEND.url}; background-size: ${WEEKEND.size};
     }
+    /* The number row is exactly --om-num tall in the cell's own type size —
+       the same size the band layer's offset resolves in — so chips start at
+       the same height whether or not the cell has a band above them. The
+       type size is set on the inner span for that reason. */
     .om-num {
-      height: var(--om-num); box-sizing: border-box;
-      align-self: flex-end;
+      height: var(--om-num); box-sizing: border-box; flex: 0 0 auto;
+      display: flex; justify-content: flex-end; align-items: flex-start;
       padding: 2px 6px 0;
-      font-size: var(--fs-label); font-weight: var(--fw-bold); line-height: 1.1;
     }
+    .om-num-text { font-size: var(--fs-label); font-weight: var(--fw-bold); line-height: 1.1; }
     .om-mon {
       font-size: var(--fs-caption); font-weight: var(--fw-black);
       letter-spacing: var(--ls-label);
       text-transform: var(--label-transform, uppercase);
       margin-right: 0.35em;
     }
-    .om-day.is-today .om-num {
+    /* Today's chip fits inside the number row, so it moves nothing. */
+    .om-day.is-today .om-num { padding: 1px 4px 0; }
+    .om-day.is-today .om-num-text {
       background: var(--accent-1); color: var(--on-accent);
-      width: 1.55em; height: 1.55em; margin: 1px 4px 0; padding: 0;
+      width: 1.3em; height: 1.3em;
       display: grid; place-items: center;
       border-radius: 999px; font-weight: var(--fw-black);
     }
-    .om-day.is-past .om-num { font-weight: var(--fw-medium); }
+    /* A day already over keeps its chips as they are; only its number goes
+       to regular weight. Hollow chips were tried and read as missing colour. */
+    .om-day.is-past .om-num-text { font-weight: var(--fw-medium); }
     .om-bandroom { flex: 0 0 auto; }
     .om-list {
       flex: 1 1 auto; min-height: 0; overflow: hidden;
@@ -544,10 +557,6 @@ function styles() {
       padding: 0 0.25em;
     }
 
-    /* Days already over: outline, stripe and initial stay, the fill goes. */
-    .om-day.is-past .om-chip { --om-fill: none; background-image: none; }
-    .om-day.is-past .om-fillseg { display: none; }
-
     /* Bands over the week, one grid row per lane, starting under the day
        numbers. pointer-events off so they never sit in front of a cell in a
        way that matters; z-index so they paint over the cell rules. */
@@ -557,7 +566,7 @@ function styles() {
       row-gap: var(--om-gap); z-index: 1; pointer-events: none;
     }
     /* A band fills its lane row, which is one chip tall (see --om-band). */
-    .om-band { margin: 0 5px; min-height: 0; height: auto; align-self: stretch; }
+    .om-band { margin: 0 5px 0 6px; min-height: 0; height: auto; align-self: stretch; }
 
     /* Fill patterns: redundant with colour on a Spectra panel, and the only
        thing telling two people apart on a black-and-white one. The stroke is
@@ -595,8 +604,10 @@ function styles() {
     @container omcell (max-width: 700px) {
       .om-grid { --om-num: 0.85em; --om-band: 0.22em; --om-gap: 0.08em; }
       .om-dow { padding: 1px 0 2px; }
-      .om-num { font-size: var(--fs-caption); padding: 2px 4px 0; }
-      .om-day.is-today .om-num { width: 1.35em; height: 1.35em; margin: 0 2px 0; }
+      .om-num { padding: 1px 4px 0; }
+      .om-num-text { font-size: var(--fs-caption); }
+      .om-day.is-today .om-num { padding: 0 2px 0; }
+      .om-day.is-today .om-num-text { width: 1.15em; height: 1.15em; }
       .om-list { flex-direction: row; flex-wrap: wrap; align-content: flex-start;
                  gap: 1px; padding: 0 2px 1px; }
       .om-chip {
@@ -611,7 +622,7 @@ function styles() {
       .om-mark.is-none { display: inline-grid; }
       /* A band is a bar in its owner's fill, nothing more: there is no
          height for a mark, and the fill and stripe still say whose it is. */
-      .om-band { margin: 0 2px; outline: 1px solid #000;
+      .om-band { margin: 0 2px 0 3px; outline: 1px solid #000;
                  background-image: var(--om-fill) !important;
                  background-size: var(--om-fill-size, 2px 2px) !important; }
       .om-band .om-stripe, .om-band .om-fillseg { display: block; }

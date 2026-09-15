@@ -27,7 +27,6 @@ DEFAULT_WEEKS = 4
 MIN_WEEKS = 2
 MAX_WEEKS = 6
 WEEK_STARTS = ("monday", "sunday")
-PAST_DAYS = ("hollow", "painted")
 CORE_MISSING = "Outlook Core plugin is not installed."
 
 
@@ -202,7 +201,6 @@ def fetch(
 
     weeks = max(MIN_WEEKS, min(MAX_WEEKS, _int_option(options, "weeks", DEFAULT_WEEKS)))
     week_start = _choice_option(options, "week_start", WEEK_STARTS)
-    past_days = _choice_option(options, "past_days", PAST_DAYS)
     show_routine = options.get("show_routine") is True
 
     zone = app_timezone()
@@ -254,7 +252,6 @@ def fetch(
         "end": end.date().isoformat(),
         "weeks": weeks,
         "week_start": week_start,
-        "past_days": past_days,
         "days": buckets,
         "bands": bands,
         "count": len(events),

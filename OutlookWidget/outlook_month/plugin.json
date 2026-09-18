@@ -6,6 +6,7 @@
   "description": "The coming weeks as a family wall calendar: a column per weekday, a row per week, starting with the current week so almost nothing on the panel is already over. Every appointment is a titled chip tinted, patterned and initialled with whoever it belongs to, and trips become bars across the days they cover. Who owns what is configured once on the Outlook Core page. Times are left off: the week widget is for today, this one is for the month.",
   "icon": "ph-calendar-dots",
   "supports": { "sizes": ["md", "lg"] },
+  "locales": ["en", "de"],
   "cell_options": [
     {
       "name": "calendars",

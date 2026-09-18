@@ -27,8 +27,8 @@ plugin turns those conventions into configurable rules.
 07:00–21:00, set per cell. Sizes `md` and `lg` only.
 
 **Day columns.** Every day in the window gets a column whether or not anything is in it, on a
-white ground with a solid dark rule between neighbours. Today's date sits in an accent-1 chip and
-carries the now-line.
+white ground with a solid dark rule between neighbours. Today's date sits in an accent-1 chip. There
+is no now-line (D39).
 
 **Bands** run across the top, spanning the day columns they cover: all-day events, and any timed
 event lasting 24 hours or more.
@@ -158,8 +158,8 @@ A week that silently loses Wednesday is worse than an empty column.
 ### Identity
 
 **D10 — Members take accent slots 2–6; accent-1 is reserved.**
-Spectra fixes accent roles by position, and accent-1 is alerts / "now". It paints the now-line and
-today's chip. `clean_config` refuses it for a member.
+Spectra fixes accent roles by position, and accent-1 is alerts / "now". It paints today's chip.
+`clean_config` refuses it for a member.
 
 **D11 — Colour is never enough on its own.**
 Every member also carries a pattern and a letter. On a black-and-white panel all six accent slots
@@ -297,8 +297,7 @@ blocks is gone, because a grey label is a dithered label; hierarchy is size and 
 Spectra 6 lays down black, white, yellow, red, blue and green and nothing else, and Tesserae's
 quantiser leaves a pixel alone only when it already sits exactly on one of those. Every theme
 accent (ochre, moss, teal, …) and every `-soft` tint is therefore a dither field on the panel, so
-the widget stops reading the accent tokens altogether: accent-1 — the now-line and today chip — is
-black, and members come from the widget's own `SLOTS` table (D37). White tiles need an edge to be
+the widget stops reading the accent tokens altogether: accent-1 — the today chip — is black, and members come from the widget's own `SLOTS` table (D37). White tiles need an edge to be
 tiles, so blocks, bars and bands carry a 1px black outline (an outline, not a border, so the size
 container's height is unchanged). The hour rules are a 1px black line cut into dashes — the only "faint" this panel can do — drawn
 on a `::before` of the lane and masked to 2px-on / 3px-off, so whatever ground is underneath shows
@@ -330,6 +329,28 @@ takes black text (D37); with owners disagreeing on text colour, the title would 
 ground it could not be read on. The alternatives were mocked on the panel with
 `tools/shared_mock.py`: a diagonal split (two owners only), an interleaved blend (a colour nobody
 owns), a white fill (indistinguishable from unassigned). Bands and routine bars split the same way.
+
+**D39 — No now-line. The render is a function of the calendar and the date, never of the clock.**
+Tesserae only repaints a panel when the rendered bytes change: an identical render is `no_change`,
+the device's ETag still matches, and it goes back to sleep on a 304. A now-line moves every minute,
+so every refresh was a new image and every wake a full ~25 s E6 paint — the single largest battery
+cost the panel has, spent on a line that had moved a fraction of a column. Without it the week
+repaints only when an event changes or the day rolls over, and the today chip still says where you
+are; on an hourly wake grid the line was never more accurate than the last hour anyway. `fetch()`
+carries no timestamp either: the digest is of the screenshot, so a clock in `ctx.data` is harmless
+today, but it is exactly the field a later change would reach for, and the test forbids it.
+
+**D40 — Panel text follows the device's locale; dates come from `Intl`, not a table.**
+Both widgets declare `locales` and ship `strings/en.json` + `strings/de.json` (title, the empty
+state, the "cached" mark — all three words the widgets say). `client.js` reads them through
+`ctx.t(key, fallback)`, and the fallback is always the English string, so a host older than the
+locale contract renders exactly what it did before. Weekday and month labels are
+`Intl.DateTimeFormat(ctx.locale, …)`: German gets `MO … SO` and `18. Sept. → 22. Sept.` for free,
+the trailing abbreviation dot is stripped because the panel sets these as caps labels, and a new
+language is one strings file. The range label formats both ends in full rather than shortening a
+same-month tail: `21. Aug. → 27.` puts the German day-first order the wrong way round. Server-side
+error sentences stay English — they are for whoever administers the install, and `fetch()` is
+not handed a locale. The event titles themselves are of course whatever Outlook holds.
 
 ## Known limits
 

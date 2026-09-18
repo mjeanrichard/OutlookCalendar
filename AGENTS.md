@@ -35,7 +35,10 @@ still a placeholder list — its real per-size layout is a separate task.
   No test may touch the network: `conftest.py`'s `fake_http` fixture replaces
   `urllib.request.urlopen` and raises on any unrouted host.
 - **Never modify the Tesserae clone.** It is a read-only dependency; the only thing that belongs in
-  it is its `.venv/`. Read its source freely — it is more authoritative than the docs.
+  it is its `.venv/`. Read its source freely — it is more authoritative than the docs. The one
+  sanctioned touch is `devserver.py --update` (`_devsupport.update_clone`), a fast-forward pull plus
+  `pip install -e ".[dev]"` and `playwright install chromium`; run it at the start of a session so
+  the host you develop against is the one production runs.
 - **Prefix non-plugin folders under `OutlookWidget/` with `_` or `.`.** That directory is a plugin
   scan root, so a plain `docs/` or `tests/` makes the loader log "plugin.json missing".
   `_tests/test_devsupport.py` asserts this stays true.
@@ -50,6 +53,7 @@ still a placeholder list — its real per-size layout is a separate task.
 
 ```powershell
 cd OutlookWidget
+C:\Users\mjean\Documents\Sources\Forks\tesserae\.venv\Scripts\python.exe devserver.py --update  # pull the clone, then serve
 C:\Users\mjean\Documents\Sources\Forks\tesserae\.venv\Scripts\python.exe devserver.py
 C:\Users\mjean\Documents\Sources\Forks\tesserae\.venv\Scripts\python.exe -m pytest . -q
 C:\Users\mjean\Documents\Sources\Forks\tesserae\.venv\Scripts\ruff.exe check .
@@ -129,6 +133,10 @@ Authoritative: `_docs/widgets.md` and `_docs/widget-design-system.md`. Schema:
   `grid-template-rows: auto minmax(0, 1fr)`, never `1fr auto`.
 - Don't add a `variant` cell option, and don't name one `label` (the host overwrites it with the
   app-level place name).
+- Panel text goes through `ctx.t(key, fallback)` with the English string as the fallback, and every
+  key lives in `strings/en.json` + `strings/de.json` (`_tests/test_manifests.py` keeps the three in
+  step). Weekday/month labels come from `Intl.DateTimeFormat(ctx.locale, …)`, never a `["MON", …]`
+  table. `tools/*_render.py --locale de` screenshots a translation against the older dev clone.
 
 ## Publishing
 

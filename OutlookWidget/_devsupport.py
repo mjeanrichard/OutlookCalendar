@@ -20,7 +20,9 @@ Set TESSERAE_REPO if the clone lives somewhere other than the default below.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -66,3 +68,41 @@ def install(plugin_loader: Any, root: Path = WIDGET_ROOT) -> Any:
     original = plugin_loader.discover
     plugin_loader.discover = with_widget_root(original, root)
     return original
+
+
+# ----- keeping the clone current ----------------------------------------
+
+# What one update run executes, in order, all inside the clone. ``sys.executable``
+# is the clone's own venv interpreter whenever devserver.py is run the documented
+# way, so the editable install and the browser land where the server looks.
+UPDATE_STEPS: tuple[tuple[str, ...], ...] = (
+    ("git", "pull", "--ff-only"),
+    (sys.executable, "-m", "pip", "install", "-q", "-e", ".[dev]"),
+    (sys.executable, "-m", "playwright", "install", "chromium"),
+)
+
+Runner = Callable[[Sequence[str], Path], int]
+
+
+def _run(cmd: Sequence[str], cwd: Path) -> int:
+    return subprocess.run(list(cmd), cwd=cwd, check=False).returncode
+
+
+def update_clone(repo: Path = TESSERAE_REPO, runner: Runner = _run) -> None:
+    """Fast-forward the Tesserae clone and refresh what it installs.
+
+    The clone is a read-only dependency, and this is the one thing that is
+    allowed to touch it: a fast-forward of whatever branch it is on. A local
+    commit or a dirty tree makes ``--ff-only`` refuse, and the refusal is
+    surfaced rather than worked around — resolving that is a person's call.
+    The pip and Playwright steps are no-ops when nothing changed, so running
+    this before every dev session costs a few seconds.
+    """
+    if not (repo / ".git").exists():
+        raise SystemExit(f"{repo} is not a git clone; set TESSERAE_REPO to the Tesserae checkout")
+    for cmd in UPDATE_STEPS:
+        code = runner(cmd, repo)
+        if code != 0:
+            raise SystemExit(
+                f"updating the Tesserae clone failed at {' '.join(cmd)!r} (exit {code})"
+            )

@@ -168,3 +168,47 @@ def test_fake_http_queues_responses_in_order(fake_http: Any) -> None:
     )
 
     assert [first["n"], second["n"], third["n"]] == [1, 2, 2]  # the last one repeats
+
+
+# ----- keeping the clone current ----------------------------------------
+
+
+def test_update_runs_every_step_inside_the_clone(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    seen: list[tuple[tuple[str, ...], Path]] = []
+
+    def runner(cmd: Any, cwd: Path) -> int:
+        seen.append((tuple(cmd), cwd))
+        return 0
+
+    _devsupport.update_clone(tmp_path, runner=runner)
+
+    assert [cmd for cmd, _ in seen] == list(_devsupport.UPDATE_STEPS)
+    assert {cwd for _, cwd in seen} == {tmp_path}
+    # A fast-forward only: a diverged clone is a person's decision, never ours.
+    assert seen[0][0][:3] == ("git", "pull", "--ff-only")
+
+
+def test_update_stops_at_the_first_failing_step(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    seen: list[tuple[str, ...]] = []
+
+    def runner(cmd: Any, cwd: Path) -> int:
+        seen.append(tuple(cmd))
+        return 1
+
+    with pytest.raises(SystemExit, match="git pull"):
+        _devsupport.update_clone(tmp_path, runner=runner)
+    assert len(seen) == 1
+
+
+def test_update_refuses_a_folder_that_is_not_a_clone(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="TESSERAE_REPO"):
+        _devsupport.update_clone(tmp_path, runner=lambda cmd, cwd: 0)
+
+
+def test_update_steps_use_the_running_interpreter() -> None:
+    """The install must land in the venv the server runs from, not whatever
+    ``python`` is first on PATH."""
+    for cmd in _devsupport.UPDATE_STEPS[1:]:
+        assert cmd[0] == sys.executable

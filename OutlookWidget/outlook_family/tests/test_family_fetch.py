@@ -123,6 +123,20 @@ def test_the_window_starts_today_at_midnight(
     assert data["days"][0]["is_today"] is True
 
 
+def test_the_payload_carries_no_clock(
+    app: Flask, fam: Any, now: datetime, graph: Any, family: Any
+) -> None:
+    # D39: the render must be a pure function of the calendar and the date so an
+    # unchanged day answers the panel with 304. A timestamp in the payload is the
+    # one field a now-line would be drawn from, so it must not be there to draw from.
+    graph.add(VIEW_URL, {"value": []})
+
+    with app.test_request_context():
+        data = _fetch(fam)
+
+    assert "now" not in data
+
+
 @pytest.mark.parametrize(("asked", "shown"), [(3, 3), (5, 5), (7, 7), (0, 3), (99, 7), ("", 7)])
 def test_the_day_count_is_clamped_to_what_the_layout_can_hold(
     app: Flask, fam: Any, now: datetime, graph: Any, family: Any, asked: Any, shown: int

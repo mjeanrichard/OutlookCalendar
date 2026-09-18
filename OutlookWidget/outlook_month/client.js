@@ -20,9 +20,28 @@
  * event arrives with `members` and an already-stripped `title`.
  */
 
-const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const MONTH = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-               "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+// Panel text comes from strings/<locale>.json through ctx.t(); the host
+// resolves the locale per device (Settings -> Devices) and falls back to
+// English. Day and month names come from Intl for the same locale, so a new
+// language is one strings file, never a table edit. Hosts older than the
+// locale contract hand over no ctx.t, and then every fallback is what shows.
+function i18n(ctx) {
+  const locale = ctx?.locale || "en";
+  const t = typeof ctx?.t === "function" ? (key, fallback) => ctx.t(key, fallback) : (_, fallback) => fallback;
+  const fmt = (opts) => new Intl.DateTimeFormat(locale, opts);
+  // "Mo." -> "MO": the panel sets these as caps labels, and the dot German
+  // and French put after an abbreviation is noise at that size.
+  const caps = (s) => s.replace(/\.$/, "").toLocaleUpperCase(locale);
+  const dow = fmt({ weekday: "short" });
+  const mon = fmt({ month: "short" });
+  const dayMonth = fmt({ month: "short", day: "numeric" });
+  return {
+    t,
+    dow: (date) => caps(dow.format(date)),
+    mon: (date) => caps(mon.format(date)),
+    dayMonth: (date) => dayMonth.format(date),
+  };
+}
 
 // A day with this many chips or fewer lets each title wrap to two lines.
 const WRAP_UP_TO = 4;
@@ -31,12 +50,14 @@ export default function render(shadow, ctx) {
   const data = ctx?.data ?? {};
   const size = ctx?.cell?.size ?? "lg";
   const css = `<link rel="stylesheet" href="/static/style/spectra-widgets.css">`;
+  const L = i18n(ctx);
+  const title = esc(L.t("title", "Family"));
 
   if (data.error) {
     shadow.innerHTML = `
       ${css}
       <div class="w size-${size}" data-widget="outlook_month">
-        <div class="w-title"><h3>Familie</h3></div>
+        <div class="w-title"><h3>${title}</h3></div>
         <div class="w-body list-body">
           <div class="u-muted"><i class="ph-bold ph-warning-circle"></i> ${esc(data.error)}</div>
         </div>
@@ -51,8 +72,8 @@ export default function render(shadow, ctx) {
     shadow.innerHTML = `
       ${css}
       <div class="w size-${size}" data-widget="outlook_month">
-        <div class="w-title"><h3>Familie</h3></div>
-        <div class="w-body list-body"><div class="u-muted">Nothing scheduled.</div></div>
+        <div class="w-title"><h3>${title}</h3></div>
+        <div class="w-body list-body"><div class="u-muted">${esc(L.t("empty", "Nothing scheduled."))}</div></div>
       </div>`;
     return;
   }
@@ -60,10 +81,10 @@ export default function render(shadow, ctx) {
   const weeks = [];
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
   const heads = weeks[0]
-    .map((day) => `<div class="om-dow">${esc(DOW[dayOfWeek(day.date)] || "")}</div>`)
+    .map((day) => `<div class="om-dow">${esc(L.dow(new Date(`${day.date}T00:00:00`)))}</div>`)
     .join("");
   const rows = weeks
-    .map((week, w) => weekHtml(week, w * 7, data.bands || [], members))
+    .map((week, w) => weekHtml(week, w * 7, data.bands || [], members, L))
     .join("");
 
   // The zoom-locked .w-title rather than the .cal-head hero: that header is
@@ -75,9 +96,9 @@ export default function render(shadow, ctx) {
     <div class="w size-${size}" data-widget="outlook_month">
       <div class="w-title">
         <i class="ph-bold ph-calendar-dots" style="color:#000"></i>
-        <h3>Familie</h3>
+        <h3>${title}</h3>
         ${legendHtml(data.members || [])}
-        <span class="w-title-meta">${esc(rangeLabel(days))}${data.stale ? " · cached" : ""}</span>
+        <span class="w-title-meta">${esc(rangeLabel(days, L))}${data.stale ? ` · ${esc(L.t("cached", "cached"))}` : ""}</span>
       </div>
       <div class="w-body cal-body">
         <div class="om-grid">
@@ -222,10 +243,6 @@ function legendHtml(roster) {
 
 /* ---------- grid ---------- */
 
-function dayOfWeek(isoDate) {
-  return new Date(`${isoDate}T00:00:00`).getDay();
-}
-
 function chipHtml(event, members, canWrap) {
   const owners = ownersOf(event, members);
   const classes = ["om-chip", chipPattern(owners)];
@@ -245,7 +262,7 @@ function chipHtml(event, members, canWrap) {
 // packed into lanes. Each cell reserves room under its number for the lanes
 // that actually cross it — down to the deepest one that does — so a weekend
 // trip costs Monday nothing and its chips start at the top.
-function weekHtml(week, offset, bands, members) {
+function weekHtml(week, offset, bands, members, L) {
   const laneEnds = [];
   const placed = [];
   for (const band of bands.slice().sort((a, b) => a.first - b.first)) {
@@ -276,7 +293,7 @@ function weekHtml(week, offset, bands, members) {
     // The first of a month carries its name; nothing else says which month
     // a row is in.
     const num = day.day === 1
-      ? `<span class="om-mon">${esc(MONTH[new Date(`${day.date}T00:00:00`).getMonth()] || "")}</span>1`
+      ? `<span class="om-mon">${esc(L.mon(new Date(`${day.date}T00:00:00`)))}</span>1`
       : esc(String(day.day ?? ""));
     return `
       <div class="${classes.join(" ")}">
@@ -359,17 +376,13 @@ function watchOverflow(shadow) {
   document.fonts?.ready?.then(() => trimOverflow(shadow));
 }
 
-function rangeLabel(days) {
+function rangeLabel(days, L) {
   const first = days[0];
   const last = days[days.length - 1];
   if (!first || !last) return "";
   const a = new Date(`${first.date}T00:00:00`);
   const b = new Date(`${last.date}T00:00:00`);
-  const head = `${MONTH[a.getMonth()] || ""} ${a.getDate()}`;
-  const tail = a.getMonth() === b.getMonth()
-    ? `${b.getDate()}`
-    : `${MONTH[b.getMonth()] || ""} ${b.getDate()}`;
-  return `${head} → ${tail} · ${b.getFullYear()}`;
+  return `${L.dayMonth(a)} → ${L.dayMonth(b)} · ${b.getFullYear()}`;
 }
 
 function esc(value) {

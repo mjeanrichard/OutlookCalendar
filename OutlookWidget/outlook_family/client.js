@@ -24,9 +24,29 @@
 // see .of-mark), which is also a caption-size line of vertical text plus a
 // little air. Narrower than this and the label is a smear of glyph sides.
 const BAR_PX = 29;
-const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const MONTH = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-               "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+// Panel text comes from strings/<locale>.json through ctx.t(); the host
+// resolves the locale per device (Settings -> Devices) and falls back to
+// English. Day and month names come from Intl for the same locale, so a new
+// language is one strings file, never a table edit. Hosts older than the
+// locale contract hand over no ctx.t, and then every fallback is what shows.
+function i18n(ctx) {
+  const locale = ctx?.locale || "en";
+  const t = typeof ctx?.t === "function" ? (key, fallback) => ctx.t(key, fallback) : (_, fallback) => fallback;
+  const fmt = (opts) => new Intl.DateTimeFormat(locale, opts);
+  // "Mo." -> "MO": the panel sets these as caps labels, and the dot German
+  // and French put after an abbreviation is noise at that size.
+  const caps = (s) => s.replace(/\.$/, "").toLocaleUpperCase(locale);
+  const dow = fmt({ weekday: "short" });
+  const mon = fmt({ month: "short" });
+  const dayMonth = fmt({ month: "short", day: "numeric" });
+  return {
+    t,
+    dow: (date) => caps(dow.format(date)),
+    mon: (date) => caps(mon.format(date)),
+    dayMonth: (date) => dayMonth.format(date),
+  };
+}
 
 // How much text a block can hold is decided in CSS, by container queries on
 // the block itself — see styles(). It has to be: a threshold in percent of
@@ -38,12 +58,14 @@ export default function render(shadow, ctx) {
   const data = ctx?.data ?? {};
   const size = ctx?.cell?.size ?? "lg";
   const css = `<link rel="stylesheet" href="/static/style/spectra-widgets.css">`;
+  const L = i18n(ctx);
+  const title = esc(L.t("title", "Family"));
 
   if (data.error) {
     shadow.innerHTML = `
       ${css}
       <div class="w size-${size}" data-widget="outlook_family">
-        <div class="w-title"><h3>Familie</h3></div>
+        <div class="w-title"><h3>${title}</h3></div>
         <div class="w-body list-body">
           <div class="u-muted"><i class="ph-bold ph-warning-circle"></i> ${esc(data.error)}</div>
         </div>
@@ -61,8 +83,8 @@ export default function render(shadow, ctx) {
     shadow.innerHTML = `
       ${css}
       <div class="w size-${size}" data-widget="outlook_family">
-        <div class="w-title"><h3>Familie</h3></div>
-        <div class="w-body list-body"><div class="u-muted">Nothing scheduled.</div></div>
+        <div class="w-title"><h3>${title}</h3></div>
+        <div class="w-body list-body"><div class="u-muted">${esc(L.t("empty", "Nothing scheduled."))}</div></div>
       </div>`;
     return;
   }
@@ -71,7 +93,7 @@ export default function render(shadow, ctx) {
     .map((day) => laneHtml(day, { members, hours, narrowRoutine, data }))
     .join("");
 
-  const heads = days.map((day) => headHtml(day)).join("");
+  const heads = days.map((day) => headHtml(day, L)).join("");
   const bands = bandsHtml(data.bands || [], days.length, members);
 
   // The zoom-locked .w-title rather than the .cal-head hero: that header is
@@ -84,9 +106,9 @@ export default function render(shadow, ctx) {
     <div class="w size-${size}" data-widget="outlook_family">
       <div class="w-title">
         <i class="ph-bold ph-users-three" style="color:#000"></i>
-        <h3>Familie</h3>
+        <h3>${title}</h3>
         ${legendHtml(data.members || [])}
-        <span class="w-title-meta">${esc(rangeLabel(days))}${data.stale ? " · cached" : ""}</span>
+        <span class="w-title-meta">${esc(rangeLabel(days, L))}${data.stale ? ` · ${esc(L.t("cached", "cached"))}` : ""}</span>
       </div>
       <div class="w-body cal-body">
         <div class="of-grid" style="grid-template-columns:2.6em repeat(${days.length},minmax(0,1fr));
@@ -141,8 +163,8 @@ function tri(direction, w, h) {
 
 // Member slots, picked on the panel from the tile test (tools/tile_test.py),
 // light enough that text is black on every one of them. `line` is the solid
-// ink for the stripe, marks and pattern stroke. Slot 1 is the now-line /
-// today chip and is never a person.
+// ink for the stripe, marks and pattern stroke. Slot 1 is the today chip
+// and is never a person.
 const SLOTS = {
   2: { fill: tile("YWWY"), line: "Y", text: "K" }, // yellow 50%
   3: { fill: tile("GWWG"), line: "G", text: "K" }, // green 50%
@@ -371,11 +393,11 @@ export function packColumns(items) {
 
 /* ---------- rendering ---------- */
 
-function headHtml(day) {
+function headHtml(day, L) {
   const classes = ["of-head"];
   if (day.is_today) classes.push("is-today");
   if (day.is_weekend) classes.push("is-weekend");
-  const dow = DOW[new Date(`${day.date}T00:00:00`).getDay()] || "";
+  const dow = L.dow(new Date(`${day.date}T00:00:00`));
   return `
     <div class="${classes.join(" ")}">
       <span class="of-dow">${esc(dow)}</span>
@@ -490,10 +512,6 @@ function laneHtml(day, opts) {
       </div>`;
   }).join("");
 
-  const nowHour = data.now ? hourOf(data.now) : null;
-  const showNow = day.is_today && nowHour != null && nowHour >= hours.start && nowHour <= hours.end;
-  const nowPct = showNow ? ((nowHour - hours.start) / Math.max(1, hours.end - hours.start)) * 100 : 0;
-
   const classes = ["of-lane"];
   if (day.is_weekend) classes.push("is-weekend");
   if (day.is_today) classes.push("is-today");
@@ -503,7 +521,6 @@ function laneHtml(day, opts) {
       <div class="of-main">
         ${barsHtml}
         ${blocks}
-        ${showNow ? `<div class="tt-now" style="top:${nowPct.toFixed(2)}%"></div>` : ""}
         ${edgeHtml(before, members, "up")}
         ${edgeHtml(after, members, "down")}
       </div>
@@ -538,17 +555,13 @@ function hourLabels(hours) {
   return out.join("");
 }
 
-function rangeLabel(days) {
+function rangeLabel(days, L) {
   const first = days[0];
   const last = days[days.length - 1];
   if (!first || !last) return "";
   const a = new Date(`${first.date}T00:00:00`);
   const b = new Date(`${last.date}T00:00:00`);
-  const head = `${MONTH[a.getMonth()] || ""} ${a.getDate()}`;
-  const tail = a.getMonth() === b.getMonth()
-    ? `${b.getDate()}`
-    : `${MONTH[b.getMonth()] || ""} ${b.getDate()}`;
-  return `${head} → ${tail} · ${b.getFullYear()}`;
+  return `${L.dayMonth(a)} → ${L.dayMonth(b)} · ${b.getFullYear()}`;
 }
 
 function esc(value) {
@@ -574,7 +587,7 @@ function styles(span) {
       /* Spectra 6 has six inks, and the quantiser leaves a pixel alone only
          when it already sits on one of them. Members are painted from the
          SLOTS table above (pure inks and 2x2 tiles of them), never from a
-         theme accent. Slot 1, the now-line and today chip, is black. */
+         theme accent. Slot 1, the today chip, is black. */
       --accent-1: #000000; --accent-1-soft: #ffffff;
       --on-accent: #ffffff;
       --surface-sunken: #ffffff;

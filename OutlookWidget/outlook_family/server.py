@@ -220,8 +220,10 @@ def fetch(
         roster = [m for m in roster if m["id"] in keep]
 
     buckets, bands = _group_by_day(events, start, days)
+    # No clock in the payload (D39): the render must be a pure function of
+    # the calendar and the date, so an unchanged day answers the panel's
+    # poll with 304 instead of a full repaint.
     return {
-        "now": now.isoformat(),
         "start": start.date().isoformat(),
         "end": end.date().isoformat(),
         "days": buckets,

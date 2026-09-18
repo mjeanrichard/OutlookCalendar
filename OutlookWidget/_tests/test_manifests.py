@@ -177,3 +177,57 @@ def test_versions_carry_the_release_sentinel() -> None:
 
 def test_repo_paths_are_relative_to_this_file() -> None:
     assert Path(__file__).resolve().parent.parent == WIDGET_ROOT
+
+
+# ----- locales ---------------------------------------------------------
+
+TRANSLATED = ("outlook_family", "outlook_month")
+
+
+@pytest.mark.parametrize("plugin_id", TRANSLATED)
+def test_every_declared_locale_ships_a_strings_file(plugin_id: str) -> None:
+    """The host resolves ``strings/<tag>.json`` from the manifest's ``locales``
+    list; a tag without a file is a locale the picker offers and the panel
+    then renders in English."""
+    locales = _manifest(plugin_id)["locales"]
+
+    assert "en" in locales  # the fallback for any tag we don't ship
+    for tag in locales:
+        table = json.loads(
+            (WIDGET_ROOT / plugin_id / "strings" / f"{tag}.json").read_text(encoding="utf-8")
+        )
+        assert table and all(isinstance(v, str) and v for v in table.values())
+
+
+@pytest.mark.parametrize("plugin_id", TRANSLATED)
+def test_translations_carry_the_same_keys_as_english(plugin_id: str) -> None:
+    strings = WIDGET_ROOT / plugin_id / "strings"
+    english = set(json.loads((strings / "en.json").read_text(encoding="utf-8")))
+
+    for path in strings.glob("*.json"):
+        assert set(json.loads(path.read_text(encoding="utf-8"))) == english, path.name
+
+
+@pytest.mark.parametrize("plugin_id", TRANSLATED)
+def test_every_string_the_widget_asks_for_is_in_english(plugin_id: str) -> None:
+    """``ctx.t(key, fallback)`` silently returns the fallback for a key the
+    strings file lacks, so a typo in either place is invisible on the panel."""
+    source = (WIDGET_ROOT / plugin_id / "client.js").read_text(encoding="utf-8")
+    asked = set(re.findall(r'\bL\.t\("([a-z_]+)"', source))
+    english = set(
+        json.loads((WIDGET_ROOT / plugin_id / "strings" / "en.json").read_text(encoding="utf-8"))
+    )
+
+    assert asked
+    assert asked == english
+
+
+@pytest.mark.parametrize("plugin_id", TRANSLATED)
+def test_day_and_month_names_come_from_intl_not_a_table(plugin_id: str) -> None:
+    """A hand-rolled ``["SUN", "MON", ...]`` is English on every panel; the
+    contract says dates follow ``ctx.locale`` through ``Intl``."""
+    code = _code_only((WIDGET_ROOT / plugin_id / "client.js").read_text(encoding="utf-8"))
+
+    assert "Intl.DateTimeFormat" in code
+    assert '"MON"' not in code
+    assert '"JAN"' not in code

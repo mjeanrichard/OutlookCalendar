@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "widgets": [
+    {
+      "id": "outlook",
+      "name": "Outlook family calendar",
+      "description": "Your Outlook calendar as a family week timetable and a family month grid, every appointment tinted, patterned and initialled with whoever it belongs to. Signs in to Microsoft Graph directly, so the panel shows the private calendar live rather than a cached iCal feed.",
+      "icon": "ph-users-three",
+      "author": {
+        "name": "Meinrad Jean-Richard",
+        "github": "mjeanrichard"
+      },
+      "tags": [
+        "calendar"
+      ],
+      "kind": "widget",
+      "tesserae_compat": "1.x",
+      "screenshot_sizes": [
+        "lg"
+      ],
+      "folders": [
+        "outlook_core",
+        "outlook_family",
+        "outlook_month"
+      ],
+      "release": {
+        "version": "1.3.5",
+        "tarball_url": "https://github.com/mjeanrichard/OutlookCalendar/releases/download/v1.3.5/outlook-widgets-1.3.5.tar.gz",
+        "sha256": "a982ef0553efbb1dd87ac9e65fd970de7ff01f8532fb530abf6c4797cf802a08"
+      },
+      "source": "https://github.com/mjeanrichard/OutlookCalendar"
+    }
+  ]
+}

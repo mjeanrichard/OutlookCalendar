@@ -84,9 +84,25 @@ def test_wrapper_matches_the_real_discover_signature() -> None:
     expected = inspect.signature(plugin_loader.discover).parameters
     actual = inspect.signature(_devsupport.with_widget_root(plugin_loader.discover)).parameters
 
-    assert set(actual) == set(expected)
-    for name, parameter in expected.items():
-        assert actual[name].kind == parameter.kind
+    # Parameters the wrapper doesn't name travel through **forwarded, so only
+    # the ones it handles itself have to match by kind.
+    assert any(p.kind is inspect.Parameter.VAR_KEYWORD for p in actual.values())
+    for name in ("plugins_dir", "schema_path", "data_root", "additional_plugins_dirs"):
+        assert actual[name].kind == expected[name].kind
+
+
+def test_wrapper_forwards_parameters_it_does_not_know(tmp_path: Path) -> None:
+    seen: dict[str, Any] = {}
+
+    def spy(plugins_dir, *, schema_path, data_root, additional_plugins_dirs=None, disabled_ids=()):
+        seen["disabled_ids"] = disabled_ids
+        return None
+
+    _devsupport.with_widget_root(spy, root=tmp_path)(
+        Path("p"), schema_path=Path("s"), data_root=Path("d"), disabled_ids={"x"}
+    )
+
+    assert seen["disabled_ids"] == {"x"}
 
 
 def test_install_patches_and_hands_back_the_original(tmp_path: Path) -> None:

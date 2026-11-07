@@ -51,13 +51,17 @@ def with_widget_root(discover: Any, root: Path = WIDGET_ROOT) -> Any:
         schema_path: Any,
         data_root: Any,
         additional_plugins_dirs: list[Path] | None = None,
+        **forwarded: Any,
     ) -> Any:
+        # ``forwarded`` carries whatever else the host passes (e.g. the newer
+        # ``disabled_ids``), so upstream can grow parameters without breaking us.
         extra = [*(additional_plugins_dirs or []), root]
         return discover(
             plugins_dir,
             schema_path=schema_path,
             data_root=data_root,
             additional_plugins_dirs=extra,
+            **forwarded,
         )
 
     return patched

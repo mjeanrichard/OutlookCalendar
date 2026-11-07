@@ -53,7 +53,7 @@ jobs:
       bump: ${{ steps.derive.outputs.bump }}
       previous_tag: ${{ steps.derive.outputs.previous_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The exact commit CI tested, not whatever main has moved on to.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -117,7 +117,7 @@ jobs:
       PREVIOUS_TAG: ${{ needs.version.outputs.previous_tag }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0

@@ -270,6 +270,10 @@ def test_the_report_counts_hits_and_collects_what_nothing_claimed(
     assert report["counts"]["prefix"] == 1
     assert report["counts"]["fussball"] == 1
     assert report["counts"]["schule"] == 0
+    # The titles behind each count, so a rule can be debugged from the page.
+    assert [item["summary"] for item in report["matched"]["prefix"]] == ["L: Klavier"]
+    assert [item["summary"] for item in report["matched"]["fussball"]] == ["Fussball"]
+    assert report["matched"]["schule"] == []
     assert [item["summary"] for item in report["unmatched"]] == ["Zahnarzt"]
     assert report["total"] == 3
 

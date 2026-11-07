@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # "chore" keeps these out of the release table in AGENTS.md: no release.
+    commit-message:
+      prefix: chore

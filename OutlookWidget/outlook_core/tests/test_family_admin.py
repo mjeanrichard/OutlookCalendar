@@ -254,9 +254,8 @@ def test_the_page_costs_no_graph_call_until_the_family_has_members(
     assert fake_http.calls_matching("calendarView") == 0
 
 
-def test_the_unmatched_tray_lists_what_no_rule_claimed(
-    configured: Flask, client: FlaskClient, core: Any, core_dir: Path, fake_http: Any
-) -> None:
+def _week_of(core: Any, core_dir: Path, fake_http: Any, *subjects: str) -> None:
+    """Sign in with one Lea and a prefix rule, and a week holding ``subjects``."""
     _signed_in(core, core_dir)
     core.save_family(
         {
@@ -294,10 +293,16 @@ def test_the_unmatched_tray_lists_what_no_rule_claimed(
                     "categories": [],
                     "isCancelled": False,
                 }
-                for i, subject in enumerate(["L: Klavier", "Zahnarzt Kontrolle"])
+                for i, subject in enumerate(subjects)
             ]
         },
     )
+
+
+def test_the_unmatched_tray_lists_what_no_rule_claimed(
+    configured: Flask, client: FlaskClient, core: Any, core_dir: Path, fake_http: Any
+) -> None:
+    _week_of(core, core_dir, fake_http, "L: Klavier", "Zahnarzt Kontrolle")
 
     body = client.get(f"{BASE}/").get_data(as_text=True)
     tray = body.split("Matched nothing this week")[1]
@@ -305,6 +310,45 @@ def test_the_unmatched_tray_lists_what_no_rule_claimed(
     assert "Zahnarzt Kontrolle" in tray
     # The one the prefix rule claimed isn't in the tray.
     assert "Klavier" not in tray
+
+
+def test_each_rule_lists_the_titles_it_matched(
+    configured: Flask, client: FlaskClient, core: Any, core_dir: Path, fake_http: Any
+) -> None:
+    """A count alone can't tell you *which* event a rule caught."""
+    _week_of(core, core_dir, fake_http, "L: Klavier", "Zahnarzt Kontrolle")
+
+    body = client.get(f"{BASE}/").get_data(as_text=True)
+    row = body.split('data-rule-id="prefix"')[1].split("Matched nothing this week")[0]
+
+    assert "1 this week" in row
+    assert "L: Klavier" in row
+    assert "Zahnarzt Kontrolle" not in row
+
+
+def test_the_report_endpoint_serves_the_preview_as_json(
+    configured: Flask, client: FlaskClient, core: Any, core_dir: Path, fake_http: Any
+) -> None:
+    """What the page fetches to re-run the preview without a reload."""
+    _week_of(core, core_dir, fake_http, "L: Klavier", "Zahnarzt Kontrolle")
+
+    data = client.get(f"{BASE}/family/report?calendar=cal-primary").get_json()
+
+    assert data["calendar"] == "cal-primary"
+    assert data["report"]["counts"] == {"prefix": 1}
+    assert [e["summary"] for e in data["report"]["matched"]["prefix"]] == ["L: Klavier"]
+    assert [e["summary"] for e in data["report"]["unmatched"]] == ["Zahnarzt Kontrolle"]
+
+
+def test_the_report_endpoint_ignores_a_calendar_it_does_not_know(
+    configured: Flask, client: FlaskClient, core: Any, core_dir: Path, fake_http: Any
+) -> None:
+    _week_of(core, core_dir, fake_http, "L: Klavier")
+
+    data = client.get(f"{BASE}/family/report?calendar=nope").get_json()
+
+    assert data["calendar"] == ""
+    assert data["report"]["total"] == 1
 
 
 def test_the_page_still_renders_when_graph_is_down(

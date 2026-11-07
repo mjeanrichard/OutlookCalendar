@@ -363,18 +363,21 @@ def report(events: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, An
     dentist appointment.
     """
     counts = {rule["id"]: 0 for rule in config.get("rules") or []}
+    matched: dict[str, list[dict[str, Any]]] = {
+        rule["id"]: [] for rule in config.get("rules") or []
+    }
     unmatched: list[dict[str, Any]] = []
     for event in events:
         owners, _routine, _title, fired = _apply(event, config)
+        item = {
+            "summary": event.get("summary") or "",
+            "start": event.get("start") or "",
+            "categories": list(event.get("categories") or []),
+            "calendar_name": event.get("calendar_name") or "",
+        }
         for rule_id in fired:
             counts[rule_id] = counts.get(rule_id, 0) + 1
+            matched.setdefault(rule_id, []).append(item)
         if not owners:
-            unmatched.append(
-                {
-                    "summary": event.get("summary") or "",
-                    "start": event.get("start") or "",
-                    "categories": list(event.get("categories") or []),
-                    "calendar_name": event.get("calendar_name") or "",
-                }
-            )
-    return {"counts": counts, "unmatched": unmatched, "total": len(events)}
+            unmatched.append(item)
+    return {"counts": counts, "matched": matched, "unmatched": unmatched, "total": len(events)}

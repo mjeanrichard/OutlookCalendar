@@ -188,8 +188,11 @@
   {% if calendars %}
   {#- Which calendar the counts and the tray below are measured against. A GET
       form so changing it never touches the saved rules; both save buttons
-      carry it through as a hidden field so the choice survives a redirect. -#}
-  <form method="get" class="ow-preview">
+      carry it through as a hidden field so the choice survives a redirect.
+      The script at the bottom turns the submit into a fetch so re-running
+      the preview keeps the scroll position; without it the form still works. -#}
+  <form method="get" class="ow-preview" data-ow-preview
+        data-report-url="{{ url_for('outlook_core_admin.report') }}">
     <label for="ow-preview-cal">Preview against</label>
     <select id="ow-preview-cal" name="calendar" class="ow-inp ow-sel">
       <option value="">All calendars</option>
@@ -200,6 +203,7 @@
       {% endfor %}
     </select>
     {{ button('Update preview', variant='ghost', icon='arrows-clockwise') }}
+    <span class="ow-hint" data-ow-preview-note hidden></span>
   </form>
   {% endif %}
 
@@ -207,7 +211,7 @@
     <input type="hidden" name="preview_calendar" value="{{ preview_calendar or '' }}">
     {% for rule in family.rules + [none] %}
     {% set idx = loop.index0 %}
-    <div class="ow-rule {% if not rule %}is-new{% endif %}">
+    <div class="ow-rule {% if not rule %}is-new{% endif %}" {% if rule %}data-rule-id="{{ rule.id }}"{% endif %}>
       <input type="hidden" name="rule_id" value="{{ rule.id if rule else '' }}">
       <input type="number" name="rule_order" class="ow-inp ow-order" value="{{ idx }}"
              min="0" max="99" title="Rules are checked in this order">
@@ -265,16 +269,32 @@
       </span>
 
       <span class="ow-tail">
-        <span class="ow-count">
-          {%- if rule and report %}{{ report.counts.get(rule.id, 0) }} this week
-          {%- elif rule %}&mdash;{% endif -%}
-        </span>
+        {%- if rule %}
+        {%- set hits = report.matched.get(rule.id, []) if report else [] %}
+        <button type="button" class="ow-count" data-ow-count
+                title="Show what this rule matched" {% if not hits %}disabled{% endif %}>
+          {%- if report %}{{ report.counts.get(rule.id, 0) }} this week{% else %}&mdash;{% endif -%}
+        </button>
+        {%- else %}
+        <span class="ow-count"></span>
+        {%- endif %}
         <label class="ow-del {% if not rule %}is-off{% endif %}" title="Remove this rule when you save">
           <input type="checkbox" name="rule_delete" value="{{ idx }}"
                  {% if not rule %}disabled{% endif %}>
           <i class="ph-bold ph-trash" aria-hidden="true"></i>
         </label>
       </span>
+      {%- if rule %}
+      {#- What the rule claimed this week, folded away behind the count. -#}
+      <ul class="ow-matches" data-ow-matches hidden>
+        {% for event in hits %}
+        <li class="ow-match">
+          <span class="ow-match-name">{{ event.summary }}</span>
+          <span class="ow-match-src">{{ event.start[:10] }}{% if event.calendar_name %} &middot; {{ event.calendar_name }}{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {%- endif %}
     </div>
     {% endfor %}
 
@@ -304,6 +324,7 @@
     only when <em>every</em> letter it finds is a member&rsquo;s &mdash; that is what stops
     <code>OK Meeting</code> from losing its first word.</p>
 
+  <div data-ow-tray>
   {% if report %}
   <div class="ow-tray">
     <div class="ow-tray-head">
@@ -329,6 +350,7 @@
     {% endif %}
   </div>
   {% endif %}
+  </div>
 </section>
 {% endif %}
 
@@ -613,6 +635,34 @@
     white-space: nowrap;
     flex: 0 0 auto;
   }
+  button.ow-count {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 2px 8px;
+    cursor: pointer;
+    color: inherit;
+  }
+  button.ow-count:not(:disabled):hover,
+  button.ow-count.is-open { border-color: var(--t-border-strong); color: var(--t-fg-soft); }
+  button.ow-count:disabled { cursor: default; }
+  button.ow-count:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
+
+  /* The matched list spans the whole row, under the rule it belongs to. */
+  .ow-matches {
+    flex: 1 0 100%;
+    list-style: none;
+    margin: 2px 0 4px;
+    padding: 6px 12px;
+    background: var(--t-surface-sunk);
+    border-radius: 8px;
+    display: grid;
+    gap: 3px;
+  }
+  .ow-matches[hidden] { display: none; }
+  .ow-match { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 0.84rem; }
+  .ow-match-name { font-weight: 600; }
+  .ow-match-src { color: var(--t-muted); font-size: 0.78rem; }
 
   .ow-foot {
     display: flex;
@@ -699,4 +749,117 @@
     .ow-count { margin-left: 0; }
   }
 </style>
+
+<script>
+  (function () {
+    // The count on each rule row folds its matched events open and shut.
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-ow-count]");
+      if (!button || button.disabled) return;
+      const list = button.closest(".ow-rule").querySelector("[data-ow-matches]");
+      list.hidden = !list.hidden;
+      button.classList.toggle("is-open", !list.hidden);
+    });
+
+    const form = document.querySelector("[data-ow-preview]");
+    if (!form || !window.fetch) return;
+    const note = form.querySelector("[data-ow-preview-note]");
+    const tray = document.querySelector("[data-ow-tray]");
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function source(item, withTime) {
+      const parts = [withTime ? item.start.slice(0, 16).replace("T", " · ") : item.start.slice(0, 10)];
+      if (withTime && item.categories.length) parts.push(item.categories.join(", "));
+      if (item.calendar_name) parts.push(item.calendar_name);
+      return parts.join(" · ");
+    }
+
+    function renderRule(row, report) {
+      const id = row.dataset.ruleId;
+      const button = row.querySelector("[data-ow-count]");
+      const list = row.querySelector("[data-ow-matches]");
+      const hits = report ? report.matched[id] || [] : [];
+      button.textContent = report ? `${report.counts[id] || 0} this week` : "—";
+      button.disabled = hits.length === 0;
+      if (!hits.length) {
+        list.hidden = true;
+        button.classList.remove("is-open");
+      }
+      list.replaceChildren(
+        ...hits.map((item) => {
+          const li = el("li", "ow-match");
+          li.append(el("span", "ow-match-name", item.summary), el("span", "ow-match-src", source(item, false)));
+          return li;
+        })
+      );
+    }
+
+    function renderTray(report, scoped) {
+      if (!report) {
+        tray.replaceChildren();
+        return;
+      }
+      const box = el("div", "ow-tray");
+      const head = el("div", "ow-tray-head");
+      head.append(
+        el("span", "", `Matched nothing this week${scoped ? " in this calendar" : ""}`),
+        el("span", "ow-chip-count", `${report.unmatched.length} of ${report.total}`)
+      );
+      box.append(head);
+      if (report.unmatched.length) {
+        for (const item of report.unmatched.slice(0, 12)) {
+          const row = el("div", "ow-tray-item");
+          row.append(el("span", "ow-tray-name", item.summary), el("span", "ow-tray-src", source(item, true)));
+          box.append(row);
+        }
+        box.append(
+          el(
+            "p",
+            "ow-tray-foot",
+            "These still appear on the panel, in grey — nothing disappears because no rule claimed it. " +
+              "This list is how you notice a rule that has quietly stopped firing."
+          )
+        );
+      } else {
+        box.append(el("p", "ow-tray-foot", "Every event this week belongs to someone."));
+      }
+      tray.replaceChildren(box);
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const url = new URL(form.dataset.reportUrl, window.location.href);
+      const calendar = form.elements.calendar.value;
+      if (calendar) url.searchParams.set("calendar", calendar);
+      note.hidden = false;
+      note.textContent = "Updating…";
+      try {
+        const response = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!response.ok) throw new Error(response.statusText);
+        const data = await response.json();
+        document.querySelectorAll(".ow-rule[data-rule-id]").forEach((row) => renderRule(row, data.report));
+        renderTray(data.report, Boolean(data.calendar));
+        // The save buttons carry the scope through their redirect, and the
+        // address bar keeps it across a real reload.
+        document.querySelectorAll('input[name="preview_calendar"]').forEach((input) => {
+          input.value = data.calendar;
+        });
+        const page = new URL(window.location.href);
+        if (data.calendar) page.searchParams.set("calendar", data.calendar);
+        else page.searchParams.delete("calendar");
+        window.history.replaceState(null, "", page);
+        note.hidden = Boolean(data.report);
+        note.textContent = data.report ? "" : "No preview available right now.";
+      } catch (err) {
+        note.textContent = "Couldn’t update the preview.";
+      }
+    });
+  })();
+</script>
 {% endblock %}

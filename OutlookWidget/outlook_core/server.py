@@ -24,6 +24,7 @@ Flask-resolving defaults, so the logic is unit-testable without an app context.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -42,7 +43,16 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.tz_resolve import app_timezone
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from werkzeug.wrappers import Response
 
 _log = logging.getLogger(__name__)
@@ -1115,6 +1125,20 @@ def blueprint() -> Blueprint:
                 f"{SCOPES} {SHARED_SCOPE}" if _settings().get("read_shared") else SCOPES
             ).split(),
         )
+
+    @bp.get("/family/report")
+    def report() -> Response:
+        """The preview counts as JSON, so the page can re-run them in place
+        without a reload that throws away the scroll position."""
+        state = status()
+        config = family_config()
+        known: set[str] = set()
+        if state["signed_in"]:
+            with contextlib.suppress(OutlookError):
+                known = {c["id"] for c in list_calendars()}
+        calendar = request.args.get("calendar", "")
+        calendar = calendar if calendar in known else ""
+        return jsonify({"calendar": calendar, "report": _week_report(state, config, calendar)})
 
     @bp.post("/family/members")
     def save_members() -> Response:

@@ -242,7 +242,7 @@ jobs:
 
           tar tzf "$tarball"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUNDLE_NAME }}-${{ env.VERSION }}
           path: ${{ steps.build.outputs.tarball }}

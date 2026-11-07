@@ -3,9 +3,10 @@ name: CI
 # Runs the same three commands AGENTS.md documents for local work, against a
 # fresh clone of the host.
 #
-# Deliberately NOT a gate on release.yml: upstream tesserae moving should not be
-# able to block a release, whereas a malformed manifest should — and release.yml
-# validates manifests itself.
+# release.yml is gated on this workflow: it runs on workflow_run once CI has
+# passed on main, so a red build never cuts a release. The trade-off is that
+# upstream tesserae moving can hold a release back until the suite is fixed.
+# release.yml still validates manifests itself.
 
 on:
   push:

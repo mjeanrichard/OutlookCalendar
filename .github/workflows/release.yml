@@ -13,8 +13,13 @@ name: Release
 # levels deep under OutlookWidget/. Source archives are also not byte-stable,
 # and the catalog pins a sha256.
 
+# Runs only after CI has finished on main, and only when it passed: a red build
+# never cuts a release. (workflow_run, not push, is what makes it a gate.)
+
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -41,6 +46,7 @@ env:
 
 jobs:
   version:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.derive.outputs.version }}
@@ -49,6 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # The exact commit CI tested, not whatever main has moved on to.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0 # git describe needs the tag history
 
       - id: derive
@@ -111,6 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Stage the bundle
